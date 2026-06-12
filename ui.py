@@ -513,15 +513,16 @@ class   UIManager:
         
         import os
         try:
-            # Cargamos la imagen normal y le ajustamos el tamaño
+            # ¡NUEVO TAMAÑO! Como tus iconos son cuadraditos, usamos 70x70 
+            # para que dejen de verse achatados y feos.
+            tamano_icono = (150, 150) 
             self.chat_img_normal = pygame.image.load(os.path.join("assets", "chat_normal.png")).convert_alpha()
-            self.chat_img_normal = pygame.transform.scale(self.chat_img_normal, (160, 50)) 
+            self.chat_img_normal = pygame.transform.scale(self.chat_img_normal, tamano_icono) 
             
-            # Cargamos la imagen de la notificación
             self.chat_img_notif = pygame.image.load(os.path.join("assets", "chat_notif.png")).convert_alpha()
-            self.chat_img_notif = pygame.transform.scale(self.chat_img_notif, (160, 50))
+            self.chat_img_notif = pygame.transform.scale(self.chat_img_notif, tamano_icono)
         except Exception as e:
-            print("Error cargando las imágenes del chat, revisa la carpeta assets:", e)
+            print("Error cargando las imágenes del chat:", e)
             self.chat_img_normal = None
             self.chat_img_notif = None
 
@@ -532,7 +533,7 @@ class   UIManager:
             font=self.get_font(18),
             base_color="#FFFFFF", 
             hovering_color="#d7fcd4",
-            size=(160, 50)
+            size=tamano_icono # <--- El tamaño de impacto también lo cuadramos a 70x70
         )
         self.messages_text = self.get_font(15).render("Chat:", True, "#b68f40")
         self.message_text = self.get_font(15).render("Msj:", True, "#b68f40")
@@ -849,17 +850,17 @@ class   UIManager:
             self.SCREEN.blit(warn_surf, warn_rect)
 
         return MENU_MOUSE_POS
-    def draw_lobby(self):      #para todos los req
+    def draw_lobby(self):
         MENU_MOUSE_POS = pygame.mouse.get_pos()
         smaller_font = self.get_font(20)
 
-        # 1. Altura del cuadro
-        box_width = 750
+        # 1. Altura y anchura del cuadro
+        box_width = 800
         if getattr(self, "show_chat", False):
-            box_height = 460
+            box_height = 500
             lobby_h = box_height + 80
         else:
-            box_height = 300 
+            box_height = 340 
             lobby_h = box_height + 80
 
         box_x = (self.SCREEN_WIDTH - box_width) // 2
@@ -868,72 +869,101 @@ class   UIManager:
         cuadro_surf = pygame.transform.scale(self.cuadro_img, (box_width, lobby_h))
         self.SCREEN.blit(cuadro_surf, (box_x - 30, box_y - 20))
 
-        # 2. Textos del Servidor
+        # 2. Textos del Servidor (NUEVO DISEÑO MÁS LIMPIO)
+        server_name = ""
+        current_p = 0
+        max_p = 0
         if getattr(self.network_manager, "currentServer", None):
-            server_text = f"Sala: {self.network_manager.currentServer.get('name','')}  Jugadores: {self.network_manager.currentServer.get('currentPlayers',0)}/{self.network_manager.currentServer.get('max_players',0)}"
+            server_name = self.network_manager.currentServer.get('name','')
+            current_p = self.network_manager.currentServer.get('currentPlayers',0)
+            max_p = self.network_manager.currentServer.get('max_players',0)
         elif getattr(self, "selectedServer", None):
-            server_text = f"Conectado a: {self.selectedServer.get('name','')}  Jugadores: {self.selectedServer.get('currentPlayers',0)}/{self.selectedServer.get('max_players',0)}"
-        else:
-            server_text = "Lobby"
-        
-        server_font = self.get_font(28)  
-        server_surf = server_font.render(server_text, True, "#d7fcd4")
-        server_rect = server_surf.get_rect(midtop=(self.SCREEN_WIDTH // 2, box_y + 30))
-        self.SCREEN.blit(server_surf, server_rect)
+            server_name = self.selectedServer.get('name','')
+            current_p = self.selectedServer.get('currentPlayers',0)
+            max_p = self.selectedServer.get('max_players',0)
 
-        # 3. Lógica del Botón Toggle Chat
-        hay_notificacion = not getattr(self, "show_chat", False) and hasattr(self.network_manager, "needs_chat_notification") and self.network_manager.needs_chat_notification
+        # Tipografía más grande y bonita
+        info_font = self.get_font(24) 
         
-        if hay_notificacion and getattr(self, "chat_img_notif", None):
-            self.TOGGLE_CHAT_BUTTON.image = self.chat_img_notif
-        elif getattr(self, "chat_img_normal", None):
-            self.TOGGLE_CHAT_BUTTON.image = self.chat_img_normal
+        # Eliminado el "Nombre:" extra. Ahora dice todo de una vez.
+        sala_surf = info_font.render(f"Sala de espera: {server_name}", True, "#e6c371") 
+        color_jugadores = "#2ecc71" if current_p >= 2 else "#e74c3c"
+        jugadores_surf = info_font.render(f"Jugadores: {current_p}/{max_p}", True, color_jugadores)
+        
+        # Posicionados un poco más abajo del borde para que no se monten en el marco
+        y_textos = box_y + 40
+        self.SCREEN.blit(sala_surf, (box_x + 60, y_textos))
+        self.SCREEN.blit(jugadores_surf, (box_x + box_width - jugadores_surf.get_width() - 60, y_textos))
 
-        # EL SECRETO: Actualizamos TODAS las variables internas del botón (x_pos, y_pos y rects)
+        # 3. SISTEMA DE NOTIFICACIÓN (EL DEFINITIVO Y BLINDADO)
+        with self.chatLock:
+            cantidad_actual = len(self.network_manager.messagesServer)
+
+        if not hasattr(self, "mensajes_guardados"):
+            self.mensajes_guardados = cantidad_actual
+            self.tiene_notificacion = False
+
+        if not getattr(self, "show_chat", False) and cantidad_actual > self.mensajes_guardados:
+            self.tiene_notificacion = True
+
+        if getattr(self, "show_chat", False):
+            self.tiene_notificacion = False
+            self.mensajes_guardados = cantidad_actual
+
+        # Posicionamos el botón
         chat_x = self.SCREEN_WIDTH // 2
-        chat_y = server_rect.bottom + 60
+        chat_y = y_textos + 80 
         self.TOGGLE_CHAT_BUTTON.x_pos = chat_x
         self.TOGGLE_CHAT_BUTTON.y_pos = chat_y
         self.TOGGLE_CHAT_BUTTON.rect.center = (chat_x, chat_y)
         if hasattr(self.TOGGLE_CHAT_BUTTON, "text_rect"):
             self.TOGGLE_CHAT_BUTTON.text_rect.center = (chat_x, chat_y)
 
-        # Limpiamos el texto para que la imagen se vea perfecta
+        # Limpiamos textos fantasmas
         self.TOGGLE_CHAT_BUTTON.text_input = ""
         if hasattr(self.TOGGLE_CHAT_BUTTON, "text"):
             self.TOGGLE_CHAT_BUTTON.text = self.get_font(18).render("", True, "#FFFFFF")
 
+        # Que el botón haga sus cálculos de hover y reseteos PRIMERO
         self.TOGGLE_CHAT_BUTTON.changeColor(MENU_MOUSE_POS)
         self.TOGGLE_CHAT_BUTTON.check_hover(MENU_MOUSE_POS)
+
+        # Le forzamos NUESTRA imagen DESPUÉS del hover y reseteo
+        if getattr(self, "tiene_notificacion", False) and getattr(self, "chat_img_notif", None) is not None:
+            self.TOGGLE_CHAT_BUTTON.image = self.chat_img_notif
+        elif getattr(self, "chat_img_normal", None) is not None:
+            self.TOGGLE_CHAT_BUTTON.image = self.chat_img_normal
+
+        # Finalmente lo dibujamos en pantalla
         self.TOGGLE_CHAT_BUTTON.update(self.SCREEN)
 
         # 4. Dibujar Chat (Solo si está abierto)
         if getattr(self, "show_chat", False):
             padding = 24
             inner_w = box_width - padding * 2
-            chat_w = int(inner_w * 0.55) 
-            chat_h = 170
+            chat_w = int(inner_w * 0.65)
+            chat_h = 180
 
-            chat_rect = pygame.Rect(box_x + (box_width - chat_w) // 2, self.TOGGLE_CHAT_BUTTON.rect.bottom + 20, chat_w, chat_h)
-            pygame.draw.rect(self.SCREEN, (255, 255, 255), chat_rect, border_radius=12)       
-            pygame.draw.rect(self.SCREEN, (180, 180, 180), chat_rect, 2, border_radius=12) 
+            chat_rect = pygame.Rect(box_x + (box_width - chat_w) // 2, self.TOGGLE_CHAT_BUTTON.rect.bottom + 15, chat_w, chat_h)
+            pygame.draw.rect(self.SCREEN, (245, 245, 245), chat_rect, border_radius=15)       
+            pygame.draw.rect(self.SCREEN, (150, 150, 150), chat_rect, 3, border_radius=15) 
             
-            y_offset = chat_rect.y + 8
+            y_offset = chat_rect.y + 10
             with self.chatLock:
                 recentMsg = list(self.network_manager.messagesServer)[-8:] 
             for msg in recentMsg:
-                rendered = smaller_font.render(msg, True, (0, 0, 0))
-                if rendered.get_width() > chat_rect.w - 14:
-                    max_chars = max(8, int(len(msg) * (chat_rect.w - 14) / max(1, rendered.get_width())) - 3)
+                rendered = smaller_font.render(msg, True, (30, 30, 30))
+                if rendered.get_width() > chat_rect.w - 20:
+                    max_chars = max(8, int(len(msg) * (chat_rect.w - 20) / max(1, rendered.get_width())) - 3)
                     msg = msg[:max_chars] + "..."
-                    rendered = smaller_font.render(msg, True, (0, 0, 0))
-                self.SCREEN.blit(rendered, (chat_rect.x + 8, y_offset))
+                    rendered = smaller_font.render(msg, True, (30, 30, 30))
+                self.SCREEN.blit(rendered, (chat_rect.x + 10, y_offset))
                 y_offset += rendered.get_height() + 6
 
             row_h = 44
             input_w = min(360, inner_w - 40) - 80
             msg_box_x = chat_rect.x
-            msg_box_y = chat_rect.bottom + 18
+            msg_box_y = chat_rect.bottom + 15
             self.message_input_box.rect.topleft = (msg_box_x, msg_box_y)
             self.message_input_box.rect.size = (input_w, row_h)
             self.message_input_box.draw(self.SCREEN)
@@ -944,7 +974,6 @@ class   UIManager:
             msg_label_pos = (self.message_input_box.rect.left - self.message_text.get_width() - 12, self.message_input_box.rect.centery - self.message_text.get_height() // 2)
             self.SCREEN.blit(self.message_text, msg_label_pos)
 
-            # Alineamos internamente el botón ENVIAR
             send_x = self.message_input_box.rect.right + max(48, self.SEND_MS_BUTTON.rect.width//2 + 10)
             send_y = self.message_input_box.rect.centery
             self.SEND_MS_BUTTON.x_pos = send_x
@@ -956,7 +985,6 @@ class   UIManager:
             self.SEND_MS_BUTTON.check_hover(MENU_MOUSE_POS)
             self.SEND_MS_BUTTON.update(self.SCREEN)
         else:
-            # Escondemos el botón ENVIAR de verdad
             self.SEND_MS_BUTTON.x_pos = -9999
             self.SEND_MS_BUTTON.y_pos = -9999
             self.SEND_MS_BUTTON.rect.topleft = (-9999, -9999)
@@ -972,8 +1000,8 @@ class   UIManager:
             play_active = True
 
         center_x = self.SCREEN_WIDTH // 2
-        offset = 150 
-        btn_y = box_y + lobby_h - 50 
+        offset = 180 
+        btn_y = box_y + lobby_h - 60 
 
         if play_active:
             self.PLAY_GAME_BUTTON.x_pos = center_x - offset
@@ -990,13 +1018,11 @@ class   UIManager:
             if hasattr(self.PLAY_GAME_BUTTON, "text_rect"):
                 self.PLAY_GAME_BUTTON.text_rect.topleft = (-9999, -9999)
 
-        # Alineamos el botón BACK
         self.LOBBY_BACK_BUTTON.x_pos = center_x + offset
         self.LOBBY_BACK_BUTTON.y_pos = btn_y
         self.LOBBY_BACK_BUTTON.rect.center = (self.LOBBY_BACK_BUTTON.x_pos, self.LOBBY_BACK_BUTTON.y_pos)
         if hasattr(self.LOBBY_BACK_BUTTON, "text_rect"):
             self.LOBBY_BACK_BUTTON.text_rect.center = self.LOBBY_BACK_BUTTON.rect.center
-            
         self.LOBBY_BACK_BUTTON.check_hover(MENU_MOUSE_POS)
         self.LOBBY_BACK_BUTTON.update(self.SCREEN)
 
