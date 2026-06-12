@@ -295,7 +295,7 @@ class   UIManager:
             self.pixel_font = None
             print("Advertencia: No se pudo cargar la fuente pixelada. Usando fuente por defecto.")
         try:
-            conectar_path = os.path.join(os.getcwd(), "assets", "conectar.png")
+            conectar_path = os.path.join(os.getcwd(), "assets", "conectar_btn.png")
             self.conectar_img = pygame.image.load(conectar_path).convert_alpha()        
         except Exception:
             self.conectar_img = None
@@ -306,14 +306,16 @@ class   UIManager:
         # Imagen de fondo/rectángulo estilo cuadro usado en uiMOD (cuadro.png)
         self.cuadro_img = pygame.image.load(os.path.join(assets_path, "cuadro.png")).convert_alpha()
 
-        self.jugar_img = pygame.image.load(os.path.join(assets_path, "jugar_button.png")).convert_alpha()  # Botón Jugar
-        self.reglas_img = pygame.image.load(os.path.join(assets_path, "reglas_button.png")).convert_alpha()  # Botón Reglas
-        self.salir_img = pygame.image.load(os.path.join(assets_path, "salir_button.png")).convert_alpha()  # Botón Salir
-        self.unirse_img = pygame.image.load(os.path.join(assets_path, "unirse_button.png")).convert_alpha()  # Botón Unirse
-        self.actualizar_img = pygame.image.load(os.path.join(assets_path, "refreshButtom.png")).convert_alpha()  # Botón Actualizar
-        self.crear_img = pygame.image.load(os.path.join(assets_path, "crear_button.png")).convert_alpha()  # Botón Crear
-        self.volver_img = pygame.image.load(os.path.join(assets_path, "volver_button.png")).convert_alpha()  # Botón Volver
-        self.iniciar_juego_img = pygame.image.load(os.path.join(assets_path, "iniciar_juego_button.png")).convert_alpha()  # Botón iniciar juego
+        self.jugar_img = pygame.image.load(os.path.join(assets_path, "jugar_btn.png")).convert_alpha() 
+        self.reglas_img = pygame.image.load(os.path.join(assets_path, "reglas_btn.png")).convert_alpha() 
+        self.salir_img = pygame.image.load(os.path.join(assets_path, "salir_btn.png")).convert_alpha() 
+        self.unirse_img = pygame.image.load(os.path.join(assets_path, "unirse_btn.png")).convert_alpha() 
+        self.actualizar_img = pygame.image.load(os.path.join(assets_path, "actualizar_btn.png")).convert_alpha() 
+        
+        self.crear_img = pygame.image.load(os.path.join(assets_path, "crear_btn.png")).convert_alpha() 
+        
+        self.volver_img = pygame.image.load(os.path.join(assets_path, "volver_btn.png")).convert_alpha() 
+        self.iniciar_juego_img = pygame.image.load(os.path.join(assets_path, "iniciar_btn.png")).convert_alpha()
 
         self.animacion_fondo_img = pygame.image.load(os.path.join(assets_path, "animacion_fondo.png")).convert_alpha()  # Fondo animado
         self.animacion_fondo_img = pygame.transform.scale(self.animacion_fondo_img, (1000, 800))  # Escalar animación
@@ -335,11 +337,10 @@ class   UIManager:
     # Función para obtener una fuente personalizada o de respaldo
     def get_font(self, size):
         try:
-            # Intentar cargar una fuente incluida en assets (si existe)
-            font_path = os.path.join(os.getcwd(), "assets", "pixel_font.ttf")
+            font_path = os.path.join(os.getcwd(), "assets", "pixel.ttf")
             return pygame.font.Font(font_path, size)
         except:
-            return pygame.font.SysFont(None, size)
+            return pygame.font.SysFont("arial", size)
 
     # Función para inicializar todos los botones y elementos de la interfaz
     def init_components(self):
@@ -1141,7 +1142,10 @@ o Descartar: Colocar una carta boca arriba en el centro de la mesa para finaliza
         
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                return False
+                if self.confirm_exit():
+                    return False
+                else:
+                    continue
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 mouse_pos = pygame.mouse.get_pos()
                 if self.current_screen == "create":
@@ -1173,7 +1177,11 @@ o Descartar: Colocar una carta boca arriba en el centro de la mesa para finaliza
                         self.options()  # Abre la pantalla de opciones/reglas
                     elif self.SALIR_BUTTON.checkForInput(event.pos):  # Clic en "SALIR"
                         self.play_click()
-                        return False  # Sale del juego
+
+                        if self.confirm_exit():
+                            return False  # Solo sale del juego si el usuario presiona "Sí"
+                        else:
+                            continue
 
                 elif self.current_screen == "play":  # Si estamos en el menú de "jugar"
                     if self.PLAY_BACK.checkForInput(event.pos):  # Botón "volver"
@@ -1291,8 +1299,12 @@ o Descartar: Colocar una carta boca arriba en el centro de la mesa para finaliza
                             if self.network_manager.canStartGame():
                                 self.network_manager.startGame()
                                 self.network_manager.stop_broadcast()
-                                print("Cerrada la transmision. Juego iniciado")
-                                return "launch_ui2"  
+                                print("Cerrada la transmision de la informacion del servido. Juego iniciado")
+
+                                import time
+                                time.sleep(1.2)
+
+                                return "launch_ui2"
                             else:
                                 print("Se necesitan al menos dos jugadores")
                         else:
@@ -1522,3 +1534,59 @@ o Descartar: Colocar una carta boca arriba en el centro de la mesa para finaliza
                     break
             screen.set_clip(clip_rect)
 
+    def confirm_exit(self):
+        """Muestra una ventana modal de confirmación antes de cerrar el juego."""
+        clock = pygame.time.Clock()
+        try:
+            snapshot = self.SCREEN.copy()
+        except:
+            snapshot = pygame.Surface((self.SCREEN_WIDTH, self.SCREEN_HEIGHT))
+            
+        overlay = pygame.Surface((self.SCREEN_WIDTH, self.SCREEN_HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 180))
+        
+        w, h = 560, 260
+        x = (self.SCREEN_WIDTH - w) // 2
+        y = (self.SCREEN_HEIGHT - h) // 2
+        modal_rect = pygame.Rect(x, y, w, h)
+        
+        btn_w, btn_h = 130, 50
+        btn_si = pygame.Rect(x + 80, y + 160, btn_w, btn_h)
+        btn_no = pygame.Rect(x + w - btn_w - 80, y + 160, btn_w, btn_h)
+        
+        font_title = self.get_font(38)
+        font_text = self.get_font(20)
+        
+        while True:
+            for ev in pygame.event.get():
+                if ev.type == pygame.QUIT:
+                    return False 
+                if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+                    if btn_si.collidepoint(ev.pos):
+                        return True
+                    if btn_no.collidepoint(ev.pos):
+                        return False
+                        
+            self.SCREEN.blit(snapshot, (0, 0))
+            self.SCREEN.blit(overlay, (0, 0))
+            
+            pygame.draw.rect(self.SCREEN, (40, 40, 40), modal_rect, border_radius=12)
+            pygame.draw.rect(self.SCREEN, (200, 50, 50), modal_rect, 3, border_radius=12) # Borde de 3px
+            
+            title = font_title.render("¿SALIR?", True, (255, 255, 255))
+            self.SCREEN.blit(title, (x + (w - title.get_width())//2, y + 30))
+            
+            info = font_text.render("¿Seguro quieres salir?", True, (200, 200, 200))
+            self.SCREEN.blit(info, (x + (w - info.get_width())//2, y + 95))
+            
+            pygame.draw.rect(self.SCREEN, (50, 180, 50), btn_si, border_radius=8)
+            lbl_si = font_text.render("SÍ", True, (255, 255, 255))
+            self.SCREEN.blit(lbl_si, lbl_si.get_rect(center=btn_si.center))
+            
+            pygame.draw.rect(self.SCREEN, (180, 50, 50), btn_no, border_radius=8)
+            lbl_no = font_text.render("NO", True, (255, 255, 255))
+            self.SCREEN.blit(lbl_no, lbl_no.get_rect(center=btn_no.center))
+            
+            pygame.display.flip()
+            clock.tick(60)       
+        
