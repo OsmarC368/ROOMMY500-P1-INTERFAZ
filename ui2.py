@@ -94,6 +94,10 @@ mostrar_boton_comprar = False
 # guarda la última carta tomada y por quién (para impedir descartarla en el mismo turno)
 last_taken_card = None
 last_taken_player = None
+
+toast_compra_texto = ""
+toast_compra_hasta = 0
+TOAST_COMPRA_DURACION = 3
 #Cambio Boton Menu / Salir
 
 def show_exit_confirmation_modal(screen, WIDTH, HEIGHT, ASSETS_PATH): 
@@ -428,6 +432,42 @@ def render_text_with_border(text, font, color, border_color, pos, surface):
     # Dibuja el texto principal encima
     txt = font.render(text, True, color)
     surface.blit(txt, pos)
+
+def mostrar_toast_compra(nombre_jugador, origen="descarte"):
+    global toast_compra_texto, toast_compra_hasta
+    if origen == "mazo":
+        toast_compra_texto = f"{nombre_jugador} compró una carta"
+    elif origen == "central":
+        toast_compra_texto = f"{nombre_jugador} tomó la carta central"
+    else:
+        toast_compra_texto = f"{nombre_jugador} tomó la carta del descarte"
+    toast_compra_hasta = time.time() + TOAST_COMPRA_DURACION
+
+def dibujar_toast_compra(surface, width, turno_rect=None):
+    global toast_compra_texto
+    if not toast_compra_texto or time.time() >= toast_compra_hasta:
+        toast_compra_texto = ""
+        return
+
+    font_toast = get_game_font(14)
+    text_surf = font_toast.render(toast_compra_texto, True, (255, 255, 255))
+    padding_x = 18
+    padding_y = 10
+    toast_w = min(width - 40, text_surf.get_width() + padding_x * 2)
+    toast_h = text_surf.get_height() + padding_y * 2
+    x = (width - toast_w) // 2
+    y = 76
+    if turno_rect:
+        y = max(y, turno_rect.bottom + 8)
+
+    toast_surface = pygame.Surface((toast_w, toast_h), pygame.SRCALPHA)
+    pygame.draw.rect(toast_surface, (45, 35, 35, 210), toast_surface.get_rect(), border_radius=10)
+    pygame.draw.rect(toast_surface, (249, 170, 51, 230), toast_surface.get_rect(), 2, border_radius=10)
+
+    text_rect = text_surf.get_rect(center=(toast_w // 2, toast_h // 2))
+    toast_surface.blit(text_surf, text_rect)
+    surface.blit(toast_surface, (x, y))
+
 
 def draw_transparent_rect(surface, color, rect, border=1):
     temp_surface = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
@@ -996,6 +1036,128 @@ def update_comprar_visibility():
     
     return True
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# DEV TOOL — Carga de mano ganadora predefinida según la ronda actual
+# ═══════════════════════════════════════════════════════════════════════════════
+def _dev_cargar_mano_ganadora(jugador_local, visual_hand,
+                              cuadros_interactivos, cartas_ref,
+                              roundOne, roundTwo, roundThree, roundFour):
+    """
+    [DEV TOOL] Reemplaza la mano de jugador_local con una mano ganadora
+    predefinida para la ronda activa y actualiza la visual inmediatamente.
+
+    Instrucciones para rellenar las manos:
+    ──────────────────────────────────────
+    Usa objetos Card con la sintaxis:  Card("valor", "palo")
+    Palos disponibles : "♠"  "♥"  "♦"  "♣"
+    Valores disponibles: "2".."10", "J", "Q", "K", "A"
+    Joker             : Card("Joker", "", joker=True)
+
+    Ronda 1 → 1 Trío  (3 cartas) + 1 Seguidilla (4 cartas) = 7 cartas mínimo
+              Ejemplo de estructura:
+                trio      = [Card("9","♠"), Card("9","♥"), Card("9","♦")]
+                seguidilla = [Card("2","♣"), Card("3","♣"), Card("4","♣"), Card("5","♣")]
+                mano_r1 = trio + seguidilla
+
+    Ronda 2 → 2 Seguidillas (4 cartas cada una) = 8 cartas mínimo
+              Ejemplo:
+                seg1 = [Card("2","♠"), Card("3","♠"), Card("4","♠"), Card("5","♠")]
+                seg2 = [Card("7","♥"), Card("8","♥"), Card("9","♥"), Card("10","♥")]
+                mano_r2 = seg1 + seg2
+
+    Ronda 3 → 3 Tríos (3 cartas cada uno) = 9 cartas mínimo
+              Ejemplo:
+                trio1 = [Card("4","♠"), Card("4","♥"), Card("4","♦")]
+                trio2 = [Card("7","♠"), Card("7","♥"), Card("7","♦")]
+                trio3 = [Card("K","♠"), Card("K","♥"), Card("K","♦")]
+                mano_r3 = trio1 + trio2 + trio3
+
+    Ronda 4 → 2 Tríos + 1 Seguidilla, Y el jugador DEBE bajar TODAS sus cartas.
+              Ejemplo:
+                trio1  = [Card("5","♠"), Card("5","♥"), Card("5","♦")]
+                trio2  = [Card("J","♠"), Card("J","♥"), Card("J","♦")]
+                seg    = [Card("2","♣"), Card("3","♣"), Card("4","♣"), Card("5","♣")]
+                mano_r4 = trio1 + trio2 + seg
+    """
+
+    # ── RONDA 1 : 1 Trío (3 cartas, mismo valor) + 1 Seguidilla (4 cartas, mismo palo, consecutivas)
+    # Total: 7 cartas.  El validador acepta exactamente 3 en el trío y 4 en la seguidilla.
+    mano_r1 = [
+        # --- Trío de Nueves ---
+        Card("9", "♠"), Card("9", "♥"), Card("9", "♦"),
+        # --- Seguidilla de Tréboles 2-3-4-5 ---
+        Card("2", "♣"), Card("3", "♣"), Card("4", "♣"), Card("5", "♣"),
+    ]
+
+    # ── RONDA 2 : 2 Seguidillas (4 cartas c/u, mismo palo, consecutivas) ────
+    # Total: 8 cartas.  Deben ser seguidillas DISTINTAS (no una misma extendida).
+    mano_r2 = [
+        # --- Primera seguidilla: Picas 5-6-7-8 ---
+        Card("5", "♠"), Card("6", "♠"), Card("7", "♠"), Card("8", "♠"),
+        # --- Segunda seguidilla: Corazones J-Q-K-A ---
+        Card("J", "♥"), Card("Q", "♥"), Card("K", "♥"), Card("A", "♥"),
+    ]
+
+    # ── RONDA 3 : 3 Tríos (3 cartas c/u, mismo valor por trío, valores DISTINTOS entre tríos)
+    # Total: 9 cartas.  El validador rechaza dos tríos del mismo valor.
+    mano_r3 = [
+        # --- Trío de Cuatros ---
+        Card("4", "♠"), Card("4", "♥"), Card("4", "♦"),
+        # --- Trío de Jotas ---
+        Card("J", "♠"), Card("J", "♥"), Card("J", "♦"),
+        # --- Trío de Reyes ---
+        Card("K", "♠"), Card("K", "♥"), Card("K", "♣"),
+    ]
+
+    # ── RONDA 4 : 2 Tríos (valores distintos) + 1 Seguidilla.
+    # IMPORTANTE: en Ronda 4 el jugador DEBE bajar TODAS sus cartas en un solo turno.
+    # La mano NO puede tener cartas extra; coloca aquí exactamente las que van a la mesa.
+    # Total: 10 cartas  (3 + 3 + 4).
+    mano_r4 = [
+        # --- Trío de Seises ---
+        Card("6", "♠"), Card("6", "♥"), Card("6", "♦"),
+        # --- Trío de Ases ---
+        Card("A", "♠"), Card("A", "♥"), Card("A", "♦"),
+        # --- Seguidilla de Diamantes 7-8-9-10 ---
+        Card("7", "♦"), Card("8", "♦"), Card("9", "♦"), Card("10", "♦"),
+    ]
+
+    # ── Selección de la mano según la ronda activa ───────────────────────────
+    if roundOne:
+        nueva_mano = mano_r1
+        etiqueta_ronda = "Ronda 1"
+    elif roundTwo:
+        nueva_mano = mano_r2
+        etiqueta_ronda = "Ronda 2"
+    elif roundThree:
+        nueva_mano = mano_r3
+        etiqueta_ronda = "Ronda 3"
+    elif roundFour:
+        nueva_mano = mano_r4
+        etiqueta_ronda = "Ronda 4"
+    else:
+        nueva_mano = []
+        etiqueta_ronda = "desconocida"
+
+    if not nueva_mano:
+        print(f"[DEV] _dev_cargar_mano_ganadora: mano para {etiqueta_ronda} está vacía. "
+              "Rellena la lista correspondiente en la función.")
+        return f"[DEV] Mano de {etiqueta_ronda} no configurada. Agrega las cartas en _dev_cargar_mano_ganadora()."
+
+    # ── Asignar la nueva mano al jugador ────────────────────────────────────
+    jugador_local.playerHand.clear()
+    jugador_local.playerHand.extend(nueva_mano)
+
+    # Marcar cardDrawn=True para que el jugador pueda bajarse sin tomar carta
+    jugador_local.cardDrawn = True
+
+    # NOTA: la reconstrucción de visual_hand, cartas_ocultas, cuadros_interactivos
+    # y cartas_ref se realiza en el handler del clic dentro de main(), donde esas
+    # variables locales son accesibles. Esta función solo prepara playerHand.
+    print(f"[DEV] playerHand reemplazada para {etiqueta_ronda}: "
+          f"{[str(c) for c in jugador_local.playerHand]}")
+    return f"[DEV] Mano de {etiqueta_ronda} cargada ({len(nueva_mano)} cartas). ¡Ya puedes bajarte!"
+# ═══════════════════════════════════════════════════════════════════════════════
 
 def main(manager_de_red): # <-- Acepta el manager de red
     global mostrar_boton_comprar
@@ -1005,6 +1167,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
     global dragging, carta_arrastrada, drag_rect, drag_offset_x, cartas_congeladas
     global cartas_ocultas, organizar_habilitado, mensaje_temporal, mensaje_tiempo
     global fase_fin_tiempo, mazo_descarte, deckForRound, round
+    global toast_compra_texto, toast_compra_hasta
     global mostrar_joker_fondo, tiempo_joker_fondo
     global player1   #NUEVO PARA PRUEBA
     global jugador_local  #NUEVO PARA PRUEBA Reeplazo de player1 :'(
@@ -1095,6 +1258,8 @@ def main(manager_de_red): # <-- Acepta el manager de red
     # Variables temporales:
     mensaje_temporal = ""
     mensaje_tiempo = 0
+    toast_compra_texto = ""
+    toast_compra_hasta = 0
 
     fase_fin_tiempo = 0  # Para controlar cuánto tiempo mostrar la pantalla final
            
@@ -1482,6 +1647,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                 for p in players:
                     if p.playerId == player_id_que_tomoD:
                         p.playerHand = mano_restante
+                        mostrar_toast_compra(p.playerName, "descarte")
                         #pass
                 cardTakenD = carta_tomada
                 mazo_descarte = mazo_de_descarte   #round.discards #mazo_de_descarte
@@ -1504,6 +1670,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                     if p.playerId == player_id_que_tomoC:
                         p.playerHand = mano_restante
                         p.playerPass = False
+                        mostrar_toast_compra(p.playerName, "mazo")
                         #pass
                 cardTaken = carta_tomada
                 deckForRound = mazoBocaAbajo #round.pile
@@ -1728,6 +1895,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                 else:
                     mensaje_temporal = f"{player_name_que_compro} compro la carta."
                     mensaje_tiempo = time.time()
+                mostrar_toast_compra(player_name_que_compro, "descarte")
             
             elif isinstance(msg, dict) and msg.get("type") == "INSERTAR_CARTA":
                 mano_restante = msg.get("playerHand")
@@ -1904,6 +2072,48 @@ def main(manager_de_red): # <-- Acepta el manager de red
 
                     continue   # no procesar más clics en este frame
                 # ─────────────────────────────────────────────────────────────
+
+                # ── [DEV TOOL] BOTÓN CONCLUIR RONDA — solo visible para el Host ──
+                if network_manager.is_host and jugador_local:
+                    _btn_dev_rect = pygame.Rect(WIDTH - 190, HEIGHT - 205, 170, 40)
+                    if _btn_dev_rect.collidepoint(mouse_x, mouse_y):
+                        resultado_dev = _dev_cargar_mano_ganadora(
+                            jugador_local, visual_hand,
+                            cuadros_interactivos, cartas_ref,
+                            roundOne, roundTwo, roundThree, roundFour
+                        )
+                        # ── Reconstrucción visual completa (inline para tener acceso
+                        #    a todas las variables locales de main) ──────────────────
+                        # 1. Limpiar estado de arrastre
+                        dragging = False
+                        carta_arrastrada = None
+                        drag_rect = None
+                        drag_offset_x = 0
+                        # 2. Limpiar cartas ocultas (índices del orden anterior)
+                        cartas_ocultas.clear()
+                        # 3. Limpiar zonas de jugada (no afecta cartas de la mesa de otros)
+                        zona_cartas[0].clear()
+                        zona_cartas[1].clear()
+                        if roundThree or roundFour:
+                            zona_cartas[2].clear()
+                        # 4. Reconstruir visual_hand desde playerHand sin conservar
+                        #    orden anterior (la mano es completamente nueva)
+                        visual_hand.clear()
+                        visual_hand.extend(jugador_local.playerHand)
+                        for idx_v, c_v in enumerate(visual_hand):
+                            c_v.id_visual = idx_v
+                        # 5. Limpiar cuadros_interactivos de Carta_X obsoletos
+                        claves_cartas = [k for k in cuadros_interactivos if k.startswith("Carta_")]
+                        for k in claves_cartas:
+                            del cuadros_interactivos[k]
+                        cartas_ref.clear()
+                        # 6. Habilitar organización
+                        organizar_habilitado = True
+                        # ─────────────────────────────────────────────────────
+                        mensaje_temporal = resultado_dev
+                        mensaje_tiempo = time.time()
+                        continue  # no procesar más clics en este frame
+                # ────────────────────────────────────────────────────────────────
 
                 # 1. Intentar levantar de las zonas de juego (Trios/Seguidillas)
                 # Excluimos el índice de descarte definido arriba
@@ -2177,6 +2387,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                 register_taken_card(jugador_local, cardTakenD)
                                 mensaje_temporal = "Tomaste una carta: no puedes descartarla este turno."
                                 mensaje_tiempo = time.time()
+                                mostrar_toast_compra(jugador_local.playerName, "descarte")
                                 #cardTakenInDiscards.append(cardTakenD)
                                 actualizar_indices_visual_hand(visual_hand)
                                 #reiniciar_visual(jugador_local, visual_hand, cuadros_interactivos, cartas_ref)
@@ -2942,6 +3153,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
 
                                             mensaje_temporal = "Has comprado la carta."
                                             mensaje_tiempo = time.time()
+                                            mostrar_toast_compra(jugador_local.playerName, "descarte")
                                         else:
                                             # CASO: COMPRA FALLIDA (ej. propio descarte)
                                             # Resetear variables del ciclo de compra para no quedar atascado
@@ -3598,6 +3810,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
 
                     mensaje_temporal = "Has comprado la carta."
                     mensaje_tiempo = time.time()
+                    mostrar_toast_compra(jugador_local.playerName, "descarte")
                     print(f"Mensje temporal... {mensaje_temporal}")
                     print(f"Mensje tiempo... {mensaje_tiempo}")
                 else:
@@ -3982,6 +4195,17 @@ def main(manager_de_red): # <-- Acepta el manager de red
                 bg=(40, 80, 130),
                 fg=(255, 255, 255)
             )
+
+        # 5. Botón "CONCLUIR RONDA" — visible solo para el host
+        if network_manager.is_host and jugador_local:
+            btn_concluir_ronda = pygame.Rect(WIDTH - 190, HEIGHT - 205, 170, 40)
+            draw_simple_button(
+                screen, btn_concluir_ronda, "Terminar ronda",
+                get_game_font(10),
+                bg=(130, 40, 40),
+                fg=(255, 255, 255)
+            )
+            cuadros_interactivos["Concluir ronda"] = btn_concluir_ronda
 
         # Intercambiar SÓLO las zonas interactivas: "Descarte" <-> "ZonaCentralInteractiva".
         # Esto cambia solo el mapeo interactivo (donde se debe soltar una carta), no afecta el dibujo.
@@ -5295,6 +5519,8 @@ def main(manager_de_red): # <-- Acepta el manager de red
                 screen.blit(surf, rect)
         elif mensaje_temporal and time.time() - mensaje_tiempo >= 5:
             mensaje_temporal = ""
+
+        dibujar_toast_compra(screen, WIDTH, turno_rect)
     
         pygame.display.flip()
         pygame.time.Clock().tick(60) # Esto mantiene el juego estable a 60 FPS
