@@ -173,19 +173,20 @@ def show_exit_confirmation_modal(screen, WIDTH, HEIGHT, ASSETS_PATH):
         pygame.display.flip()
         clock.tick(60) 
         
-def show_menu_modal(screen, WIDTH, HEIGHT, ASSETS_PATH, ctrl_volumen): #cambiado para todos los reqs
+def show_menu_modal(screen, WIDTH, HEIGHT, ASSETS_PATH, ctrl_volumen):
     import pygame
     import os
-    import sys
     clock = pygame.time.Clock()
-    img_reanudar = pygame.image.load(os.path.join(ASSETS_PATH, "reanudar.png")).convert_alpha()
-    # Eliminamos la imagen de "ajustes" para darle espacio al control de volumen real
-    img_salir = pygame.image.load(os.path.join(ASSETS_PATH, "salir.png")).convert_alpha()
     
-    btn_w, btn_h = 220, 70
+    # 1. Cargar las imágenes
+    img_reanudar = pygame.image.load(os.path.join(ASSETS_PATH, "renaudar_btn.png")).convert_alpha()
+    img_salir = pygame.image.load(os.path.join(ASSETS_PATH, "salir_btn.png")).convert_alpha()
+    
+    # 2. Unificar el tamaño de los botones
+    btn_w, btn_h = 240, 60 
     img_reanudar = pygame.transform.smoothscale(img_reanudar, (btn_w, btn_h))
     img_salir = pygame.transform.smoothscale(img_salir, (btn_w, btn_h))
-    
+
     try:
         background_snapshot = screen.copy()
     except Exception:
@@ -195,35 +196,31 @@ def show_menu_modal(screen, WIDTH, HEIGHT, ASSETS_PATH, ctrl_volumen): #cambiado
     overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
     overlay.fill((0, 0, 0, 140))
 
-    w, h = 330, 360 
+    # 3. Hacer el modal más grande (400 de ancho x 360 de alto)
+    w, h = 400, 360 
     x = (WIDTH - w) // 2
     y = (HEIGHT - h) // 2
     modal_rect = pygame.Rect(x, y, w, h)
     padding = 16
 
-    btn_w, btn_h = 220, 44
-    
-    # Nuevas posiciones centradas
-    btn_resume = pygame.Rect(x + (w - btn_w) // 2, y + 60, btn_w, btn_h)
-    
-    # --- ZONA DEL CONTROL DE VOLUMEN ---
-    vol_y = y + 180
-    # El ancho total de los cuadritos es aprox 145px (6 botones de 20px + 5 espacios de 5px)
-    vol_x = x + (w - 145) // 2 
-    
-    # Reubicamos dinámicamente los rectángulos del control de volumen para que aparezcan en el menú
-    ctrl_volumen.rects = []
-    for i in range(len(ctrl_volumen.niveles)):
-        pos_x = vol_x + (i * (ctrl_volumen.ancho_btn + ctrl_volumen.espacio))
-        rect = pygame.Rect(pos_x, vol_y, ctrl_volumen.ancho_btn, ctrl_volumen.alto_btn)
-        ctrl_volumen.rects.append(rect)
-    # -----------------------------------
+    # 4. Posicionar los botones centrados
+    inicio_y = y + 40
+    btn_resume = pygame.Rect(x + (w - btn_w) // 2, inicio_y, btn_w, btn_h)
+    btn_exit = pygame.Rect(x + (w - btn_w) // 2, inicio_y + 190, btn_w, btn_h)
 
-    btn_exit = pygame.Rect(x + (w - btn_w) // 2, y + 225, btn_w, btn_h)
-    
+    # 5. DEFINIR LAS FUENTES CORRECTAMENTE (Aquí estaba el bug)
     font_path = os.path.join(ASSETS_PATH, "PressStart2P-Regular.ttf")
     title_font = pygame.font.Font(font_path, 16)
-    vol_font = pygame.font.Font(font_path, 12)
+    vol_font = pygame.font.Font(font_path, 12) # <--- Variable agregada
+
+    # 6. Centrar el control de volumen dinámicamente dentro del modal
+    ancho_total_volumen = (len(ctrl_volumen.rects) * ctrl_volumen.ancho_btn) + ((len(ctrl_volumen.rects) - 1) * ctrl_volumen.espacio)
+    vol_x = x + (w - ancho_total_volumen) // 2
+    vol_y = inicio_y + 120
+    # Actualizamos las posiciones de las barritas de volumen
+    for i, rect in enumerate(ctrl_volumen.rects):
+        rect.x = vol_x + (i * (ctrl_volumen.ancho_btn + ctrl_volumen.espacio))
+        rect.y = vol_y
 
     while True:
         for ev in pygame.event.get():
@@ -236,34 +233,35 @@ def show_menu_modal(screen, WIDTH, HEIGHT, ASSETS_PATH, ctrl_volumen): #cambiado
                 if btn_resume.collidepoint(mx, my):
                     return "resume"
                 if btn_exit.collidepoint(mx, my):
-                    # Forzamos cierre limpio si le da a salir desde el modal
                     return "exit"
 
-        if pygame.display.get_init():
-            screen.blit(background_snapshot, (0, 0))
-            screen.blit(overlay, (0, 0))
+        screen.blit(background_snapshot, (0, 0))
+        screen.blit(overlay, (0, 0))
 
-            pygame.draw.rect(screen, (40, 40, 40), modal_rect, border_radius=12)
-            pygame.draw.rect(screen, (150, 150, 150), modal_rect, 2, border_radius=12)
+        # Dibujar caja del modal
+        pygame.draw.rect(screen, (40, 40, 40), modal_rect, border_radius=12)
+        pygame.draw.rect(screen, (150, 150, 150), modal_rect, 2, border_radius=12)
 
-            # Títulos
-            title = title_font.render("Menú de Pausa", True, (230, 230, 230))
-            screen.blit(title, (x + padding + 50, y + padding))
+        # Dibujar Título
+        title = title_font.render("Menú de Pausa", True, (230, 230, 230))
+        screen.blit(title, (x + (w - title.get_width()) // 2, y + padding))
 
-            vol_text = vol_font.render("Volumen de Música", True, (200, 200, 200))
-            screen.blit(vol_text, (x + (w - vol_text.get_width()) // 2, vol_y - 30))
+        # Dibujar Botón Reanudar
+        screen.blit(img_reanudar, btn_resume.topleft)
+        
+        # Dibujar Texto de Volumen
+        vol_text = vol_font.render("Volumen de Música", True, (200, 200, 200))
+        screen.blit(vol_text, (x + (w - vol_text.get_width()) // 2, inicio_y + 90))
 
-            # Botones
-            screen.blit(img_reanudar, btn_resume.topleft)
-            screen.blit(img_salir, btn_exit.topleft)
-            
-            # Dibujamos y procesamos los clicks de volumen SOLAMENTE cuando el menú está abierto
-            ctrl_volumen.actualizar_y_dibujar()
-            
-            pygame.display.flip()
-            clock.tick(60)
-        else:
-            return "exit"
+        # Actualizar y dibujar las barritas de volumen
+        ctrl_volumen.actualizar_y_dibujar()
+        
+        # Dibujar Botón Salir
+        screen.blit(img_salir, btn_exit.topleft)
+        
+        pygame.display.flip()
+        clock.tick(60)
+
 #Cambio Boton Menu / Salir
 
 def register_taken_card(player, card):
@@ -639,8 +637,60 @@ def confirm_buy_card(screen, card, WIDTH, HEIGHT, ASSETS_PATH, font):
         clock.tick(60)
 #COMPRAR CARTA'''
 
-
-
+def confirm_exit_modal(screen, WIDTH, HEIGHT):
+    clock = pygame.time.Clock()
+    try:
+        snapshot = screen.copy()
+    except:
+        snapshot = pygame.Surface((WIDTH, HEIGHT))
+        
+    overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, 180))
+    
+    w, h = 560, 260
+    x = (WIDTH - w) // 2
+    y = (HEIGHT - h) // 2
+    modal_rect = pygame.Rect(x, y, w, h)
+    
+    btn_w, btn_h = 130, 50
+    btn_si = pygame.Rect(x + 80, y + 160, btn_w, btn_h)
+    btn_no = pygame.Rect(x + w - btn_w - 80, y + 160, btn_w, btn_h)
+    
+    font_title = get_game_font(38)
+    font_text = get_game_font(20)
+    
+    while True:
+        for ev in pygame.event.get():
+            if ev.type == pygame.QUIT:
+                return False
+            if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+                if btn_si.collidepoint(ev.pos):
+                    return True
+                if btn_no.collidepoint(ev.pos):
+                    return False
+                    
+        screen.blit(snapshot, (0, 0))
+        screen.blit(overlay, (0, 0))
+        
+        pygame.draw.rect(screen, (40, 40, 40), modal_rect, border_radius=12)
+        pygame.draw.rect(screen, (200, 50, 50), modal_rect, 3, border_radius=12)
+        
+        title = font_title.render("¿SALIR?", True, (255, 255, 255))
+        screen.blit(title, (x + (w - title.get_width())//2, y + 30))
+        
+        info = font_text.render("¿Seguro quieres salir?", True, (200, 200, 200))
+        screen.blit(info, (x + (w - info.get_width())//2, y + 95))
+        
+        pygame.draw.rect(screen, (50, 180, 50), btn_si, border_radius=8)
+        lbl_si = font_text.render("SÍ", True, (255, 255, 255))
+        screen.blit(lbl_si, lbl_si.get_rect(center=btn_si.center))
+        
+        pygame.draw.rect(screen, (180, 50, 50), btn_no, border_radius=8)
+        lbl_no = font_text.render("NO", True, (255, 255, 255))
+        screen.blit(lbl_no, lbl_no.get_rect(center=btn_no.center))
+        
+        pygame.display.flip()
+        clock.tick(60)
 
 #CambioJoker #WhySoSerious
 
@@ -4287,7 +4337,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
 
         menu_rect = pygame.Rect(menu_x, menu_y, menu_w, menu_h)
 
-        menu_img_path = os.path.join(ASSETS_PATH, "menu.png")
+        menu_img_path = os.path.join(ASSETS_PATH, "menu_btn.png")
         if os.path.exists(menu_img_path):
             menu_img = pygame.image.load(menu_img_path).convert_alpha()
             img = pygame.transform.smoothscale(menu_img, (menu_rect.width, menu_rect.height))
@@ -5307,7 +5357,21 @@ def main(manager_de_red): # <-- Acepta el manager de red
         if fase == "mostrar_orden":
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    running = False
+                    if confirm_exit_modal(screen, WIDTH, HEIGHT):
+                        try:
+                            if jugador_local:
+                                msgSalir = {
+                                    "type": "SALIR",
+                                    "playerId": jugador_local.playerId,
+                                    "playerName": jugador_local.playerName
+                                }
+                                if network_manager and network_manager.player:
+                                    network_manager.sendData(msgSalir)
+                        except:
+                            pass
+                        running = False
+                    else:
+                        continue
             screen.blit(fondo_img, (0, 0))
 
             # --- RECTÁNGULO DE FONDO GRIS ---
@@ -5368,7 +5432,21 @@ def main(manager_de_red): # <-- Acepta el manager de red
         if fase == "fin1":
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    running = False
+                    if confirm_exit_modal(screen, WIDTH, HEIGHT):
+                        try:
+                            if jugador_local:
+                                msgSalir = {
+                                    "type": "SALIR",
+                                    "playerId": jugador_local.playerId,
+                                    "playerName": jugador_local.playerName
+                                }
+                                if network_manager and network_manager.player:
+                                    network_manager.sendData(msgSalir)
+                        except:
+                            pass
+                        running = False
+                    else:
+                        continue
             screen.blit(fondo_img, (0, 0))
             mostrar_puntuaciones_final(screen, fondo_img, players, WIDTH, HEIGHT, ASSETS_PATH, round_number=1)
             pygame.display.flip()
@@ -5400,7 +5478,21 @@ def main(manager_de_red): # <-- Acepta el manager de red
         if fase == "fin2":
                 for event in pygame.event.get():
                     if event.type == pygame.QUIT:
-                        running = False
+                        if confirm_exit_modal(screen, WIDTH, HEIGHT):
+                            try:
+                                if jugador_local:
+                                    msgSalir = {
+                                        "type": "SALIR",
+                                        "playerId": jugador_local.playerId,
+                                        "playerName": jugador_local.playerName
+                                    }
+                                    if network_manager and network_manager.player:
+                                        network_manager.sendData(msgSalir)
+                            except:
+                                pass
+                            running = False
+                        else:
+                            continue
                 screen.blit(fondo_img, (0, 0))
                 mostrar_puntuaciones_final(screen, fondo_img, players, WIDTH, HEIGHT, ASSETS_PATH, round_number=2)
                 pygame.display.flip()
@@ -5431,7 +5523,21 @@ def main(manager_de_red): # <-- Acepta el manager de red
         if fase == "fin3":
                 for event in pygame.event.get():
                     if event.type == pygame.QUIT:
-                        running = False
+                        if confirm_exit_modal(screen, WIDTH, HEIGHT):
+                            try:
+                                if jugador_local:
+                                    msgSalir = {
+                                        "type": "SALIR",
+                                        "playerId": jugador_local.playerId,
+                                        "playerName": jugador_local.playerName
+                                    }
+                                    if network_manager and network_manager.player:
+                                        network_manager.sendData(msgSalir)
+                            except:
+                                pass
+                            running = False
+                        else:
+                            continue
                 screen.blit(fondo_img, (0, 0))
                 mostrar_puntuaciones_final(screen, fondo_img, players, WIDTH, HEIGHT, ASSETS_PATH, round_number=3)
                 pygame.display.flip()
@@ -5461,7 +5567,21 @@ def main(manager_de_red): # <-- Acepta el manager de red
         if fase == "fin4":
                 for event in pygame.event.get():
                     if event.type == pygame.QUIT:
-                        running = False
+                        if confirm_exit_modal(screen, WIDTH, HEIGHT):
+                            try:
+                                if jugador_local:
+                                    msgSalir = {
+                                        "type": "SALIR",
+                                        "playerId": jugador_local.playerId,
+                                        "playerName": jugador_local.playerName
+                                    }
+                                    if network_manager and network_manager.player:
+                                        network_manager.sendData(msgSalir)
+                            except:
+                                pass
+                            running = False
+                        else:
+                            continue
                 screen.blit(fondo_img, (0, 0))
                 mostrar_puntuacion_final_detallada(screen, fondo_img, players, WIDTH, HEIGHT, ASSETS_PATH, round_number=4)
                 pygame.display.flip()
@@ -5479,7 +5599,21 @@ def main(manager_de_red): # <-- Acepta el manager de red
         if fase == "game_over":
                 for event in pygame.event.get():
                     if event.type == pygame.QUIT:
-                        running = False
+                        if confirm_exit_modal(screen, WIDTH, HEIGHT):
+                            try:
+                                if jugador_local:
+                                    msgSalir = {
+                                        "type": "SALIR",
+                                        "playerId": jugador_local.playerId,
+                                        "playerName": jugador_local.playerName
+                                    }
+                                    if network_manager and network_manager.player:
+                                        network_manager.sendData(msgSalir)
+                            except:
+                                pass
+                            running = False
+                        else:
+                            continue
                 screen.blit(fondo_img, (0, 0))
                 mostrar_ganador_final(screen, fondo_img, players, WIDTH, HEIGHT, ASSETS_PATH)
                 pygame.display.flip()
