@@ -50,16 +50,22 @@ class NetworkState:
         self.server_info_to_reconnect = None
         self.receivedData = None
         
+        # Mensajes temporales para la UI (avisos de conexión/desconexión)
+        self.mensaje = "" #LOS ATRIBUTOS DEL MENSAJE SE INICIALIZAN AQUÍ PARA QUE LUEGO EL MÁNAGER LOS HEREDE
+        self.tiempoDelMensaje = 0
+        
         # Estado de jugadores en partida
         self.connected_players: List[ConnectedPlayer] = []
         self.last_activity = {}  # {player_id: timestamp_float}
-
+        
         # --- FIX congelamiento al cambiar de ronda ---
         # El Host guarda aquí el último mensaje crítico de cambio de ronda
         # (PLAYER_ORDER) que generó, para poder reenviarlo bajo demanda si
         # algún cliente reporta que no lo recibió (ver REQUEST_RESYNC).
         self.last_player_order_msg = None
         self._lock_last_order = threading.Lock()
+
+        self.current_player_count = None
         
         logger.info("NetworkState inicializado de forma segura.")
     
