@@ -53,6 +53,13 @@ class NetworkState:
         # Estado de jugadores en partida
         self.connected_players: List[ConnectedPlayer] = []
         self.last_activity = {}  # {player_id: timestamp_float}
+
+        # --- FIX congelamiento al cambiar de ronda ---
+        # El Host guarda aquí el último mensaje crítico de cambio de ronda
+        # (PLAYER_ORDER) que generó, para poder reenviarlo bajo demanda si
+        # algún cliente reporta que no lo recibió (ver REQUEST_RESYNC).
+        self.last_player_order_msg = None
+        self._lock_last_order = threading.Lock()
         
         logger.info("NetworkState inicializado de forma segura.")
     
@@ -121,3 +128,14 @@ class NetworkState:
         """Registra el último milisegundo en que un jugador respondió un ping."""
         with self._lock_players:
             self.last_activity[player_id] = timestamp
+
+    def set_last_player_order(self, msg: dict):
+        """Guarda (en el Host) el último mensaje PLAYER_ORDER enviado, para
+        poder reenviarlo si un cliente pide resync porque nunca lo recibió."""
+        with self._lock_last_order:
+            self.last_player_order_msg = msg
+
+    def get_last_player_order(self):
+        """Devuelve el último PLAYER_ORDER guardado por el Host (o None)."""
+        with self._lock_last_order:
+            return self.last_player_order_msg

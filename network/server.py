@@ -232,6 +232,32 @@ class GameServer:
                         pass
             return
 
+        elif msg_type == MessageType.REQUEST_RESYNC.value:
+            # FIX congelamiento: un cliente avisa que lleva demasiado
+            # tiempo esperando el siguiente PLAYER_ORDER (cambio de ronda)
+            # y nunca le llegó. Reenviamos el último que el Host generó,
+            # directamente al socket de ese jugador (con reintentos).
+            logger.info(f"REQUEST_RESYNC recibido de {player.name}")
+            print(f"[RED] {player.name} solicitó resync (no recibió el cambio de ronda).")
+            last_msg = self.state.get_last_player_order()
+            if last_msg is not None:
+                ok = False
+                for _ in range(3):
+                    try:
+                        if self.transport.send_atomic(player.conn, last_msg):
+                            ok = True
+                            break
+                    except Exception as e:
+                        logger.error(f"Error reenviando resync a {player.name}: {e}")
+                    time.sleep(0.3)
+                if ok:
+                    print(f"[RED] Resync reenviado correctamente a {player.name}.")
+                else:
+                    print(f"[RED][ERROR] No se pudo reenviar resync a {player.name}.")
+            else:
+                print("[RED][AVISO] No hay PLAYER_ORDER guardado para responder al resync.")
+            return
+
         else:
             # ── Todas las jugadas del juego ──────────────────────────────────
             # 1. Anotar el sender para que el Host sepa de quién viene
