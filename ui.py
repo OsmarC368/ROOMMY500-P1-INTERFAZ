@@ -237,7 +237,9 @@ class   UIManager:
         # Dimensiones de la pantalla
         self.SCREEN_WIDTH = screen_width
         self.SCREEN_HEIGHT = screen_height
-        
+        self.ASSETS_PATH = os.path.join(os.path.dirname(__file__), "assets")
+        self.FONT_FILE = os.path.join(self.ASSETS_PATH, "PressStart2P-Regular.ttf")
+        self.cacheDeFuentes = {}
         # Manager de red (para conectar con el servidor, enviar/recibir datos)
         self.network_manager = network_manager
         
@@ -874,14 +876,15 @@ class   UIManager:
         server_name = ""
         current_p = 0
         max_p = 0
-        if getattr(self.network_manager, "currentServer", None):
-            server_name = self.network_manager.currentServer.get('name','')
-            current_p = self.network_manager.currentServer.get('currentPlayers',0)
-            max_p = self.network_manager.currentServer.get('max_players',0)
+        cs = getattr(self.network_manager, "currentServer", None)
+        if cs is not None and cs.get('name'):
+            server_name = cs.get('name', '')
+            current_p = cs.get('currentPlayers', 0)
+            max_p = cs.get('max_players', 0)
         elif getattr(self, "selectedServer", None):
-            server_name = self.selectedServer.get('name','')
-            current_p = self.selectedServer.get('currentPlayers',0)
-            max_p = self.selectedServer.get('max_players',0)
+            server_name = self.selectedServer.get('name', '')
+            current_p = self.selectedServer.get('currentPlayers', 0)
+            max_p = self.selectedServer.get('max_players', 0)
 
         # Tipografía más grande y bonita
         info_font = self.get_font(24) 
@@ -896,20 +899,45 @@ class   UIManager:
         self.SCREEN.blit(sala_surf, (box_x + 60, y_textos))
         self.SCREEN.blit(jugadores_surf, (box_x + box_width - jugadores_surf.get_width() - 60, y_textos))
 
-        # 3. SISTEMA DE NOTIFICACIÓN (EL DEFINITIVO Y BLINDADO)
-        with self.chatLock:
-            cantidad_actual = len(self.network_manager.messagesServer)
+        # ─── 3. SISTEMA DE NOTIFICACIÓN (RE-BLINDADO POST-CAMBIOS) ───
+        # Conseguimos de forma segura la cantidad actual de mensajes en el servidor
+        cantidad_actual = 0
+        if hasattr(self, "network_manager"):
+            # Intentamos leer messagesServer; si no existe por los cambios, usamos una lista vacía
+            msg_server = getattr(self.network_manager, "messagesServer", [])
+            if msg_server is not None:
+                cantidad_actual = len(msg_server)
 
+        # Inicialización de las variables de control de la UI (la primera vez)
         if not hasattr(self, "mensajes_guardados"):
             self.mensajes_guardados = cantidad_actual
             self.tiene_notificacion = False
 
+        # SI EL CHAT ESTÁ CERRADO: Si la cantidad actual creció, se activa la alerta
         if not getattr(self, "show_chat", False) and cantidad_actual > self.mensajes_guardados:
             self.tiene_notificacion = True
 
+        # SI EL CHAT ESTÁ ABIERTO: Reseteamos la alerta e igualamos el contador al día
         if getattr(self, "show_chat", False):
             self.tiene_notificacion = False
             self.mensajes_guardados = cantidad_actual
+
+
+        # ─── INTERCAMBIO SEGURO DE LA IMAGEN EN EL BOTÓN DEL CHAT ────────────
+        if hasattr(self, "TOGGLE_CHAT_BUTTON"):
+            # Si tu lógica dice que hay notificación, forzamos la textura con círculo rojo
+            if getattr(self, "tiene_notificacion", False):
+                if getattr(self, "chat_img_notif", None) is not None:
+                    self.TOGGLE_CHAT_BUTTON.original_image = self.chat_img_notif
+            else:
+                # Si no hay notificación, nos aseguramos de que regrese a la limpia
+                if getattr(self, "chat_img_normal", None) is not None:
+                    self.TOGGLE_CHAT_BUTTON.original_image = self.chat_img_normal
+            
+            # Procesamos el hover y dibujamos para que asimile la original_image correcta
+            self.TOGGLE_CHAT_BUTTON.check_hover(MENU_MOUSE_POS)
+            self.TOGGLE_CHAT_BUTTON.update(self.SCREEN)
+        # ─────────────────────────────────────────────────────────────────────
 
         # Posicionamos el botón
         chat_x = self.SCREEN_WIDTH // 2
@@ -1026,8 +1054,69 @@ class   UIManager:
             self.LOBBY_BACK_BUTTON.text_rect.center = self.LOBBY_BACK_BUTTON.rect.center
         self.LOBBY_BACK_BUTTON.check_hover(MENU_MOUSE_POS)
         self.LOBBY_BACK_BUTTON.update(self.SCREEN)
-
+        
+        # Mostrar aviso de conexión (si existe) centrado en la pantalla
+        try:
+            self.avisoDeConexion(getattr(self.network_manager, 'mensaje', ''), getattr(self.network_manager, 'tiempoDelMensaje', 0))
+        except Exception:
+            print("Error mostrando aviso de conexióooOOoOoOOoOooOOoooOoOoOoOoOOoOoOooOoOoOooOn")
+            pass
+        
         return MENU_MOUSE_POS
+
+    ####################CAMBIOS PARA EL MENSAJE EN EL LOBBY##################################
+    def lobbyMessage(self, text, max_chars = 40):
+            words = text.split()
+            if not words:
+                return []
+            lines = []
+            cur = words[0]
+            for w in words[1:]:
+                if len(cur) + 1 + len(w) <= max_chars:
+                    cur += " " + w
+                else:
+                    lines.append(cur)
+                    cur = w
+            lines.append(cur)
+            return lines
+
+    def get_game_font(self, size):
+        """Devuelve pygame.font.Font cargada desde assets o SysFont si falla; cachea por tamaño."""
+        if size in self.cacheDeFuentes:
+            return self.cacheDeFuentes[size] #TENGO QUE ARREGLAR VARIAS COSAS AQUÍ CON LOS SELF DUPLICADOS
+        try:
+            if os.path.exists(self.FONT_FILE):
+                f = pygame.font.Font(self.FONT_FILE, size)
+            else:
+                f = pygame.font.SysFont("arial", size)
+        except Exception:
+            f = pygame.font.SysFont("arial", size)
+        self.cacheDeFuentes[size] = f
+        return f
+    
+    def avisoDeConexion(self, mensaje, tiempo):
+        if not mensaje or not tiempo:
+            return
+        try:
+            if time.time() - tiempo < 5:
+                font_msg = self.get_game_font(18)
+                lines = self.lobbyMessage(mensaje)
+                line_h = font_msg.get_linesize()
+                base_x = self.SCREEN_WIDTH // 2
+                base_y = self.SCREEN_HEIGHT // 2 + 160
+                total_h = line_h * len(lines)
+                start_y = base_y - total_h // 2
+                for i, line in enumerate(lines):
+                    surf = font_msg.render(line, True, (255, 255, 255))
+                    rect = surf.get_rect(center=(base_x, start_y + i * line_h))
+                    # borde oscuro alrededor (sutil)
+                    for dx, dy in [(-1,0),(1,0),(0,-1),(0,1),(-1,-1),(1,-1),(-1,1),(1,1)]:
+                        self.SCREEN.blit(font_msg.render(line, True, (165, 42, 42)), (rect.x + dx, rect.y + dy))
+                    self.SCREEN.blit(surf, rect)
+        except Exception:
+            # No bloquear la UI si hay un error en el render
+            return
+    #############################LOS CAMBIOS DEL MENSAJE DEL LOBBY TERMINAN AQUÍ#############################################
 
     def options(self):
         pygame.display.set_caption("Opciones")
@@ -1394,6 +1483,17 @@ o Descartar: Colocar una carta boca arriba en el centro de la mesa para finaliza
     
     def process_received_messages(self):
         """Procesa los mensajes recividos de la red"""
+        # También procesar mensajes de la cola incoming_messages (redundancia con receivedData)
+        try:
+            incoming = self.network_manager.get_incoming_messages()
+            for msg_type, msg_data in incoming:
+                if msg_type == "UPDATE_PLAYERS" and isinstance(msg_data, dict):
+                    players_data = msg_data.get("players")
+                    if players_data is not None:
+                        print("Recibiendo lista de jugadores desde la cola")
+        except Exception:
+            pass
+
         if hasattr(self.network_manager,'receivedData') and self.network_manager.receivedData:
             with self.network_manager.lock:
                 data = self.network_manager.receivedData
