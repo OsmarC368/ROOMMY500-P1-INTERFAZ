@@ -1069,11 +1069,17 @@ def update_comprar_visibility():
     1. La flag mostrar_boton_comprar sea True
     2. El jugador NO sea quien descartó la carta del tope
     3. El jugador NO sea la mano actual
+    4. El jugador NO sea un espectador (ya alcanzó/superó los 500 puntos)
     """
     global mostrar_boton_comprar, mazo_descarte, jugador_local
     
     # Si ya es False, no hacemos nada
     if not mostrar_boton_comprar:
+        return
+    
+    # Si el jugador local es espectador, nunca debe poder comprar
+    if jugador_local is None or getattr(jugador_local, "isSpectator", False):
+        mostrar_boton_comprar = False
         return
     
     # Aplicar restricciones: si no hay cartas, si es mano, o si es su propio descarte
@@ -1897,7 +1903,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                 if getattr(mazo_descarte[-1], "discarded_by", None) == jugador_local.playerId:
                     mensaje_temporal = f"{player_name_que_pasoD} pasó del descarte. Ha iniciado un ciclo de compra."
                     mensaje_tiempo = time.time()
-                elif not jugador_local.isHand:
+                elif not jugador_local.isHand and not getattr(jugador_local, "isSpectator", False):
                     mostrar_boton_comprar = True  
                     mensaje_temporal = f"{player_name_que_pasoD} pasó del descarte. Compra habilitada temporalmente. Presiona 'COMPRAR CARTA' si deseas comprar."
                     mensaje_tiempo = time.time()
@@ -1915,15 +1921,24 @@ def main(manager_de_red): # <-- Acepta el manager de red
                 waiting = False
                 time_waiting = None
 
-                # players[player_in_turn_id].playerTurn = True
-                for idx, p in enumerate(players):
-
-                    if p.playerId == player_in_turn_id:
-                        players[idx].playerTurn = True
-                        if p.playerId == jugador_local.playerId:
-                            jugador_local.playerTurn = True   #mmmmmmmmmmmmm
-                    else:
+                # FIX espectador: si el jugador en turno de compra es espectador, omitirlo
+                # y limpiar su turno sin activarlo
+                jugador_en_turno_obj = next(
+                    (p for p in players if p.playerId == player_in_turn_id), None
+                )
+                if jugador_en_turno_obj and getattr(jugador_en_turno_obj, "isSpectator", False):
+                    # Es espectador — no asignarle turno, simplemente limpiar todo
+                    for idx, p in enumerate(players):
                         players[idx].playerTurn = False
+                    print(f"[COMPRA] Jugador {player_in_turn_id} es espectador, se omite su turno de compra.")
+                else:
+                    for idx, p in enumerate(players):
+                        if p.playerId == player_in_turn_id:
+                            players[idx].playerTurn = True
+                            if p.playerId == jugador_local.playerId:
+                                jugador_local.playerTurn = True
+                        else:
+                            players[idx].playerTurn = False
 
                 print(f"Lista de jugadores para compra: {players_for_buy_ids}")
                 print(f"Jugador en turno de compra: {[p for p in players if p.playerTurn]}")
@@ -1943,15 +1958,24 @@ def main(manager_de_red): # <-- Acepta el manager de red
                 next_buy_id_pos = (current_buy_pos + 1) % len(players_for_buy_ids)
                 next_buy_id = players_for_buy_ids[next_buy_id_pos]
 
-                for idx, p in enumerate(players):
-
-                    if p.playerId == next_buy_id:
-                        players[idx].playerTurn = True
-                        if p.playerId == jugador_local.playerId:
-                            jugador_local.playerTurn = True
-                    else:
+                # FIX espectador: si el siguiente en la lista es espectador, saltarlo
+                next_jugador_obj = next(
+                    (p for p in players if p.playerId == next_buy_id), None
+                )
+                if next_jugador_obj and getattr(next_jugador_obj, "isSpectator", False):
+                    # Espectador — limpiar turno sin activar a nadie
+                    for idx, p in enumerate(players):
                         players[idx].playerTurn = False
-                        
+                    print(f"[COMPRA] Siguiente jugador {next_buy_id} es espectador, se omite.")
+                else:
+                    for idx, p in enumerate(players):
+                        if p.playerId == next_buy_id:
+                            players[idx].playerTurn = True
+                            if p.playerId == jugador_local.playerId:
+                                jugador_local.playerTurn = True
+                        else:
+                            players[idx].playerTurn = False
+
                 print(f"Lista de jugadores para compra: {players_for_buy_ids}")
                 print(f"Jugador en turno de compra: {[p for p in players if p.playerTurn]}")
 
@@ -3259,6 +3283,11 @@ def main(manager_de_red): # <-- Acepta el manager de red
                     elif nombre == "Comprar carta":
                         print(f" Click en COMPRAR CARTA... Boton comprar carta")
                         #CAMBIO 2
+                        if getattr(jugador_local, "isSpectator", False):
+                            mensaje_temporal = "Eres espectador: no puedes comprar cartas."
+                            mensaje_tiempo = time.time()
+                            mostrar_boton_comprar = False
+                            continue
                         if not jugador_local.isHand: # El jugador MANO no puede comprar cartas...
 
                             if not bought:
@@ -3283,7 +3312,13 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                     for idx, player in enumerate(players):
                                         if player.playerId == jugador_mano_actual.playerId:
                                             indice_mano_actual = idx
-                                            siguiente_idx = (idx + 1) % len(players)
+                                            # FIX espectador: buscar el siguiente que NO sea espectador
+                                            siguiente_idx_base = (idx + 1) % len(players)
+                                            for _offset in range(len(players)):
+                                                candidato_idx = (siguiente_idx_base + _offset) % len(players)
+                                                if not getattr(players[candidato_idx], "isSpectator", False):
+                                                    siguiente_idx = candidato_idx
+                                                    break
                                             break
 
                                     # noBuy = False
@@ -3291,7 +3326,10 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                     for i in range(1, len(players)):
                                         
                                         idx_jugador_en_compra = (siguiente_idx + (i - 1)) % len(players)
-                                        players_for_buy_ids.append(players[idx_jugador_en_compra].playerId)
+                                        # FIX espectador: no incluir espectadores en el ciclo de compra
+                                        jugador_en_compra = players[idx_jugador_en_compra]
+                                        if not getattr(jugador_en_compra, "isSpectator", False):
+                                            players_for_buy_ids.append(jugador_en_compra.playerId)
 
                                         if idx_jugador_en_compra == indice_jugador_local:
                                             break
@@ -3911,11 +3949,11 @@ def main(manager_de_red): # <-- Acepta el manager de red
                 next_buy_id_pos = (current_buy_pos + 1) % len(players_for_buy_ids)
                 next_buy_id = players_for_buy_ids[next_buy_id_pos] #.playerId
 
+                # FIX espectador: si el siguiente es espectador, no asignarle turno
+                next_obj = next((p for p in players if p.playerId == next_buy_id), None)
                 for idx, p in enumerate(players):
-
                     players[idx].playerTurn = False
-
-                    if p.playerId == next_buy_id:
+                    if p.playerId == next_buy_id and not getattr(next_obj, "isSpectator", False):
                         players[idx].playerTurn = True
 
                 msgPasarCompraC = {
@@ -6267,3 +6305,4 @@ tiempo_joker_fondo = 0
 if __name__ == "__main__":
     #ocultar_elementos_visual(screen, fondo_img)  # Solo muestra el fondo al inicio
     main()
+
