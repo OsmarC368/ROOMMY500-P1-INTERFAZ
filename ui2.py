@@ -213,14 +213,14 @@ def show_menu_modal(screen, WIDTH, HEIGHT, ASSETS_PATH, ctrl_volumen):
     title_font = pygame.font.Font(font_path, 16)
     vol_font = pygame.font.Font(font_path, 12) # <--- Variable agregada
 
-    # 6. Centrar el control de volumen dinámicamente dentro del modal
-    ancho_total_volumen = (len(ctrl_volumen.rects) * ctrl_volumen.ancho_btn) + ((len(ctrl_volumen.rects) - 1) * ctrl_volumen.espacio)
-    vol_x = x + (w - ancho_total_volumen) // 2
-    vol_y = inicio_y + 120
-    # Actualizamos las posiciones de las barritas de volumen
-    for i, rect in enumerate(ctrl_volumen.rects):
-        rect.x = vol_x + (i * (ctrl_volumen.ancho_btn + ctrl_volumen.espacio))
-        rect.y = vol_y
+    # 6. Centrar el control de volumen dinámicamente dentro del modal 
+    vol_x = x + (w - ctrl_volumen.ancho_icono) // 2
+    vol_y = inicio_y + 100
+    # Actualizamos la posición del icono de volumen
+    ctrl_volumen.x = vol_x
+    ctrl_volumen.y = vol_y
+    ctrl_volumen.rect.x = vol_x
+    ctrl_volumen.rect.y = vol_y
 
     while True:
         for ev in pygame.event.get():
@@ -1091,7 +1091,8 @@ def update_comprar_visibility():
 # ═══════════════════════════════════════════════════════════════════════════════
 def _dev_cargar_mano_ganadora(jugador_local, visual_hand,
                               cuadros_interactivos, cartas_ref,
-                              roundOne, roundTwo, roundThree, roundFour):
+                              roundOne, roundTwo, roundThree, roundFour,
+                              network_manager=None, players=None):
     """
     [DEV TOOL] Reemplaza la mano de jugador_local con una mano ganadora
     predefinida para la ronda activa y actualiza la visual inmediatamente.
@@ -1206,6 +1207,17 @@ def _dev_cargar_mano_ganadora(jugador_local, visual_hand,
     # variables locales son accesibles. Esta función solo prepara playerHand.
     print(f"[DEV] playerHand reemplazada para {etiqueta_ronda}: "
           f"{[str(c) for c in jugador_local.playerHand]}")
+
+    if network_manager and network_manager.is_host and players is not None:
+        hand_data = [{"value": c.value, "type": c.type, "joker": c.joker} for c in jugador_local.playerHand]
+        sync_msg = {
+            "type": "DEV_HAND_SYNC",
+            "player_id": jugador_local.playerId,
+            "hand": hand_data
+        }
+        network_manager.broadcast_message(sync_msg)
+        print(f"[DEV] Hand sync broadcast enviado a {len(players)-1} clientes")
+
     return f"[DEV] Mano de {etiqueta_ronda} cargada ({len(nueva_mano)} cartas). ¡Ya puedes bajarte!"
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -1350,13 +1362,16 @@ def main(manager_de_red): # <-- Acepta el manager de red
         print("Aviso: No se encontró el sonido de ordenar:", e)
         ordenar_sound = None
 
-#  Cargar sonido para el botón extender
+   # Cargar sonido para el botón extender
     try:
         extender_sound_path = os.path.join(ASSETS_PATH, "sonido", "extender.mp3") 
         extender_sound = pygame.mixer.Sound(extender_sound_path)
     except Exception as e:
         print("Aviso: No se encontró el sonido de extender:", e)
         extender_sound = None
+
+    bajarse_sound_path = os.path.join(ASSETS_PATH, "sonido", "bajarse.wav")
+    bajarse_sound = pygame.mixer.Sound(bajarse_sound_path)
 
     #contJugador = 0
     #contHost = 0
@@ -1459,21 +1474,26 @@ def main(manager_de_red): # <-- Acepta el manager de red
                             except Exception:
                                 pass
                             break
-                        if msg[1].get("type") == "PLAYER_ORDER":
-                          # FIX congelamiento: PLAYER_ORDER puede llegar duplicado si el
-                          # Host tuvo que reintentar el envío (fallo de red) o si el cliente
-                          # pidió un resync explícito. Si el cliente ya avanzó de la fase
-                          # "eleccion" (ya está jugando la ronda), un PLAYER_ORDER tardío es
-                          # un duplicado y debe ignorarse para no resetear su estado actual.
-                          if fase != "eleccion":
-                            print(f"[CLIENTE] PLAYER_ORDER duplicado/tardío ignorado "
-                                  f"(fase actual ya es '{fase}').")
+                        
+                        if msg[1].get("type") == "DEV_HAND_SYNC":
+                            sync_data = msg[1]
+                            sync_pid = sync_data.get("player_id")
+                            sync_hand = sync_data.get("hand", [])
+                            for p in players:
+                                if p.playerId == sync_pid:
+                                    from Card import Card
+                                    p.playerHand.clear()
+                                    for c in sync_hand:
+                                        p.playerHand.append(
+                                            Card(c["value"], c["type"], c.get("joker", False))
+                                        )
+                                    print(f"[DEV_HAND_SYNC] Mano del jugador {p.playerName} (ID:{sync_pid}) sincronizada: {len(sync_hand)} cartas")
+                                    if jugador_local and jugador_local.playerId == sync_pid:
+                                        print("[DEV_HAND_SYNC] Es nuestro jugador local - actualizando visual")
+                                    break
                             continue
-                          # FIX: todo el procesamiento de PLAYER_ORDER se envuelve en
-                          # try/except. Antes, cualquier excepción aquí (KeyError, IndexError,
-                          # etc.) tumbaba el hilo completo del cliente y dejaba la pantalla
-                          # congelada en "cargando" sin avanzar de fase ni recibir más mensajes.
-                          try:
+                        
+                        if msg[1].get("type") == "PLAYER_ORDER":
                             just_went_down_this_turn = False
                             last_inserted_card_data = None
                             dragging_board_joker = False
@@ -1489,6 +1509,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                             buy_finished = False
                             list_confirm_ids = []
                             mostrar_boton_comprar = False
+                            
                             # --- FIN CORRECCIÓN ---
                             print("Jugador: Recibido orden de jugadores")
                             players[:] = msg[1].get("players", [])
@@ -1585,8 +1606,15 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                     carta.id_visual = id(carta)  # O usa idx para algo más simple
 
                             # Cambiar fase usando las banderas YA sincronizadas
+                            # Cambiar fase
                             mensaje_orden = msg[1].get("orden_str", "")
                             tiempo_inicio_orden = time.time()
+                            
+                            round_number = msg[1].get("round_number", 1)
+                            roundOne = (round_number == 1)
+                            roundTwo = (round_number == 2)
+                            roundThree = (round_number == 3)
+                            roundFour = (round_number == 4)
                             
                             if roundOne:
                                 fase = "mostrar_orden"
@@ -1596,25 +1624,8 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                 fase = "ronda3"
                             elif roundFour:
                                 fase = "ronda4"
-                          except Exception as e:
-                            # FIX: si algo falló procesando PLAYER_ORDER, no dejamos al cliente
-                            # congelado. Se loggea el error para diagnóstico y, como red de
-                            # seguridad, se intenta avanzar de fase usando las banderas de ronda
-                            # ya conocidas (aunque la mano/zona de cartas pueda no haberse
-                            # actualizado del todo, es preferible eso a quedarse "cargando").
-                            import traceback
-                            print(f"[ERROR] Excepción procesando PLAYER_ORDER: {e}")
-                            traceback.print_exc()
-                            mensaje_temporal = "Hubo un problema sincronizando la nueva ronda. Reintentando..."
-                            mensaje_tiempo = time.time()
-                            if roundOne:
-                                fase = "mostrar_orden"
-                            elif roundTwo:
-                                fase = "ronda2"
-                            elif roundThree:
-                                fase = "ronda3"
-                            elif roundFour:
-                                fase = "ronda4"
+                                
+                                
                 # Fin procesar Mensajes de INICIO----  Cargar Mazos, Mano, e isHand... PARA EL JUGADOR...       
             if network_manager.is_host:
                 if roundOne:
@@ -1725,7 +1736,18 @@ def main(manager_de_red): # <-- Acepta el manager de red
                 buy_finished = False
                 list_confirm_ids = []
                 mostrar_boton_comprar = False
+                
                 # --- FIN CORRECCIÓN ---'''
+                if roundOne:
+                    current_round_number = 1
+                elif roundTwo:
+                    current_round_number = 2
+                elif roundThree:
+                    current_round_number = 3
+                elif roundFour:
+                    current_round_number = 4
+                else:
+                    current_round_number = 1
                 msgOrden = {
                     "type": "PLAYER_ORDER",
                     "players": players,
@@ -1734,23 +1756,11 @@ def main(manager_de_red): # <-- Acepta el manager de red
                     "hands":round.hands,
                     "deckForRound": deckForRound,
                     "mazo_descarte": mazo_descarte,
-                    # FIX: Incluir banderas de ronda para que el cliente
-                    # sepa exactamente en qué ronda está sin depender de
-                    # sus propias banderas locales (que pueden ser stale).
-                    "roundOne": roundOne,
-                    "roundTwo": roundTwo,
-                    "roundThree": roundThree,
-                    "roundFour": roundFour,
+                    "round_number": current_round_number
                 }
-                # FIX congelamiento al cambiar de ronda: antes se usaba
-                # broadcast_message (fire-and-forget, un solo intento). Si
-                # ese envío fallaba por cualquier motivo de red, el cliente
-                # quedaba esperando este mensaje para siempre, bloqueado en
-                # sock.recv(), con la pantalla aparentemente "congelada".
-                # send_player_order reintenta automáticamente y guarda una
-                # copia para poder reenviarla si el cliente pide resync.
-                network_manager.send_player_order(msgOrden)
+                network_manager.broadcast_message(msgOrden)
                 # Cambiar fase
+                
                 mensaje_orden = orden_str.strip()
                 tiempo_inicio_orden = time.time()
                 if roundOne:
@@ -2273,14 +2283,14 @@ def main(manager_de_red): # <-- Acepta el manager de red
                 # ─────────────────────────────────────────────────────────────
 
                 # ── [DEV TOOL] BOTÓN CONCLUIR RONDA — solo visible para el Host ──
-                # Habilitado únicamente cuando es el turno del jugador local (jugador_local.isHand)
-                if network_manager.is_host and jugador_local and jugador_local.isHand:
+                if network_manager.is_host and jugador_local:
                     _btn_dev_rect = pygame.Rect(WIDTH - 190, HEIGHT - 205, 170, 40)
                     if _btn_dev_rect.collidepoint(mouse_x, mouse_y):
                         resultado_dev = _dev_cargar_mano_ganadora(
                             jugador_local, visual_hand,
                             cuadros_interactivos, cartas_ref,
-                            roundOne, roundTwo, roundThree, roundFour
+                            roundOne, roundTwo, roundThree, roundFour,
+                            network_manager, players
                         )
                         # ── Reconstrucción visual completa (inline para tener acceso
                         #    a todas las variables locales de main) ──────────────────
@@ -6267,3 +6277,4 @@ tiempo_joker_fondo = 0
 if __name__ == "__main__":
     #ocultar_elementos_visual(screen, fondo_img)  # Solo muestra el fondo al inicio
     main()
+
