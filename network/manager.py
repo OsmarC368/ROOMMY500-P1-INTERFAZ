@@ -372,6 +372,14 @@ class NetworkManager:
                 'currentPlayers': len(self.state.get_connected_players())
             }
         return getattr(self, '_current_server', None)
+    
+    @property
+    def mensaje(self):
+        return getattr(self.state, 'mensaje', '')
+
+    @property
+    def tiempoDelMensaje(self):
+        return getattr(self.state, 'tiempoDelMensaje', 0)
 
     def get_exit_gameServer(self):
         """Devuelve y borra la lista de mensajes de salir/desconexion del juego."""
