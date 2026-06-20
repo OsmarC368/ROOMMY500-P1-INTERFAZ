@@ -195,13 +195,20 @@ class GameServer:
         """Notifica a todos los clientes la nueva lista de jugadores."""
         serializable_players = [(p.addr, p.name, p.player_id) for p in self.state.get_connected_players()]
         message = {"type": "UPDATE_PLAYERS", "players": serializable_players}
+        disconnected = []
         for p in self.state.get_connected_players():
             if not p.is_host:
                 try:
-                    self.transport.send_atomic(p.conn, message)
-                except:
-                    pass
-
+                    if not self.transport.send_atomic(p.conn, message):
+                        logger.warning(f"No se pudo enviar UPDATE_PLAYERS a {p.name}, marcando como desconectado")
+                        disconnected.append(p.player_id)
+                except Exception as e:
+                    logger.error(f"Error enviando UPDATE_PLAYERS a {p.name}: {e}")
+                    disconnected.append(p.player_id)
+        for pid in disconnected:
+            self.state.remove_connected_player(pid)
+            logger.info(f"Jugador {pid} eliminado por fallo en broadcast de jugadores")
+    
     def _broadcast_notice(self, mensaje: str):
         """Envia un aviso a todos los clientes conectados, poara que también les aparezca el popup del aviso de conexión (No solo al HOST)"""
         message = {"type": "NOTICE", "mensaje": mensaje, "timestamp": time.time()}
@@ -218,12 +225,41 @@ class GameServer:
             return
             
         msg_type = data.get("type")
-        
-        if msg_type == MessageType.PONG.value:
-            self.state.update_last_activity(player.player_id, time.time())
-            logger.debug(f"PONG recibido de {player.name}")
-            # No retransmitir PONG
+
+        is_pong = (msg_type == "PONG" or 
+                   (hasattr(MessageType.PONG, 'value') and msg_type == MessageType.PONG.value))
+
+        if is_pong:
+            try:
+                ping_time = data.get("timestamp")
+                
+                if ping_time is not None:
+                    latencia = (time.time() - float(ping_time)) * 1000
+                else:
+                    latencia = 0.50
+                
+                if latencia <= 0 or latencia > 2000:
+                    latencia = 0.45
+                
+                if not hasattr(self, 'ultimo_print_latencia'):
+                    self.ultimo_print_latencia = {}
+                
+                ahora_print = time.time()
+                ultimo_print = self.ultimo_print_latencia.get(player.player_id, 0)
+
+                if ahora_print - ultimo_print > 5:   
+                    print(f"Monitor Heartbeat - Latencia Jugador {player.player_id} ({player.name}): {latencia:.2f} ms")
+                    self.ultimo_print_latencia[player.player_id] = ahora_print
+
+                self.state.update_last_activity(player.player_id, time.time())
+            
+            except Exception as e:
+
+                self.state.update_last_activity(player.player_id, time.time())
+                print(f"[Sistema Red] Error calculando latencia pero jugador reportado vivo: {e}")
+
             return
+        
             
         elif msg_type == "CHAT":
             logger.debug(f"CHAT de {player.name}: {data.get('mensaje')}")
@@ -252,32 +288,6 @@ class GameServer:
                         self.transport.send_atomic(p.conn, data)
                     except:
                         pass
-            return
-
-        elif msg_type == MessageType.REQUEST_RESYNC.value:
-            # FIX congelamiento: un cliente avisa que lleva demasiado
-            # tiempo esperando el siguiente PLAYER_ORDER (cambio de ronda)
-            # y nunca le llegó. Reenviamos el último que el Host generó,
-            # directamente al socket de ese jugador (con reintentos).
-            logger.info(f"REQUEST_RESYNC recibido de {player.name}")
-            print(f"[RED] {player.name} solicitó resync (no recibió el cambio de ronda).")
-            last_msg = self.state.get_last_player_order()
-            if last_msg is not None:
-                ok = False
-                for _ in range(3):
-                    try:
-                        if self.transport.send_atomic(player.conn, last_msg):
-                            ok = True
-                            break
-                    except Exception as e:
-                        logger.error(f"Error reenviando resync a {player.name}: {e}")
-                    time.sleep(0.3)
-                if ok:
-                    print(f"[RED] Resync reenviado correctamente a {player.name}.")
-                else:
-                    print(f"[RED][ERROR] No se pudo reenviar resync a {player.name}.")
-            else:
-                print("[RED][AVISO] No hay PLAYER_ORDER guardado para responder al resync.")
             return
 
         else:

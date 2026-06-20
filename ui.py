@@ -237,9 +237,7 @@ class   UIManager:
         # Dimensiones de la pantalla
         self.SCREEN_WIDTH = screen_width
         self.SCREEN_HEIGHT = screen_height
-        self.ASSETS_PATH = os.path.join(os.path.dirname(__file__), "assets")
-        self.FONT_FILE = os.path.join(self.ASSETS_PATH, "PressStart2P-Regular.ttf")
-        self.cacheDeFuentes = {}
+        
         # Manager de red (para conectar con el servidor, enviar/recibir datos)
         self.network_manager = network_manager
         
@@ -330,12 +328,12 @@ class   UIManager:
         try:
             font_for_credits = self.pixel_font if self.pixel_font else pygame.font.SysFont("Arial", self.global_font_size)
             self.credits_surface = font_for_credits.render(
-                "Proyecto realizado por el Equipo 1",
+                "Aquí la única regla es que no hay límites. Deja la cordura en la puerta y reparte.",
                 True,
-                "#d7fcd4"
+                "#ffffff"
             )
         except Exception:
-            self.credits_surface = pygame.font.SysFont(None, self.global_font_size).render("Proyecto realizado por el Equipo 1", True, "#d7fcd4")
+            self.credits_surface = pygame.font.SysFont(None, self.global_font_size).render("Aquí la única regla es que no hay límites. Deja la cordura en la puerta y reparte.", True, "#ffffff")
     # Función para obtener una fuente personalizada o de respaldo
     def get_font(self, size):
         try:
@@ -937,7 +935,6 @@ class   UIManager:
             # Procesamos el hover y dibujamos para que asimile la original_image correcta
             self.TOGGLE_CHAT_BUTTON.check_hover(MENU_MOUSE_POS)
             self.TOGGLE_CHAT_BUTTON.update(self.SCREEN)
-        # ─────────────────────────────────────────────────────────────────────
 
         # Posicionamos el botón
         chat_x = self.SCREEN_WIDTH // 2
@@ -1054,7 +1051,7 @@ class   UIManager:
             self.LOBBY_BACK_BUTTON.text_rect.center = self.LOBBY_BACK_BUTTON.rect.center
         self.LOBBY_BACK_BUTTON.check_hover(MENU_MOUSE_POS)
         self.LOBBY_BACK_BUTTON.update(self.SCREEN)
-        
+
         # Mostrar aviso de conexión (si existe) centrado en la pantalla
         try:
             self.avisoDeConexion(getattr(self.network_manager, 'mensaje', ''), getattr(self.network_manager, 'tiempoDelMensaje', 0))
@@ -1063,6 +1060,7 @@ class   UIManager:
             pass
         
         return MENU_MOUSE_POS
+
 
     ####################CAMBIOS PARA EL MENSAJE EN EL LOBBY##################################
     def lobbyMessage(self, text, max_chars = 40):
@@ -1715,4 +1713,4 @@ o Descartar: Colocar una carta boca arriba en el centro de la mesa para finaliza
             
             pygame.display.flip()
             clock.tick(60)       
-        
+           
