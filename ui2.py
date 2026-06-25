@@ -22,6 +22,34 @@ network_manager = None   #NetworkManager()
 jugadores = []           #network_manager.connected_players
 print(f"Jugadore ... {jugadores}")
 
+class DummyNetworkManager:
+    def __init__(self):
+        self.connected_players = [(None, (None, 0), "Local", 1)]
+        self.is_host = True
+        self.playerName = "Local"
+        self.player_id = 1
+        self.player = None
+    def broadcast_message(self, msg):
+        pass
+    def send_message(self, msg):
+        pass
+    def sendData(self, msg):
+        pass
+    def get_incoming_messages(self):
+        return []
+    def get_game_state(self):
+        return None
+    def get_moves_game(self):
+        return []
+    def get_moves_gameServer(self):
+        return []
+    def request_resync(self):
+        pass
+    def stop(self):
+        pass
+    def dprint(self, *args, **kwargs):
+        print(*args, **kwargs)
+
 pygame.init()
 
 icon = pygame.image.load("assets/icon.png")  # Reemplaza con la ruta correcta a tu imagen
@@ -99,6 +127,15 @@ toast_compra_texto = ""
 toast_compra_hasta = 0
 TOAST_COMPRA_DURACION = 3
 #Cambio Boton Menu / Salir
+
+# --- LUPA / MAGNIFICADOR ---
+# Carta actualmente bajo el cursor para mostrar ampliada
+magnify_card = None
+# Si quieres desactivar la lupa pon False
+magnify_enabled = True
+# Tamaño por defecto de la lupa (ancho, alto)
+magnify_size = (200, 300)
+
 
 def show_exit_confirmation_modal(screen, WIDTH, HEIGHT, ASSETS_PATH): 
     import pygame
@@ -513,7 +550,6 @@ def get_card_image(card):
             img = pygame.Surface((60, 90), pygame.SRCALPHA)
             pygame.draw.rect(img, (200, 200, 200), img.get_rect(), border_radius=8)
             return img
-
 #CAMBIO 1
 # --- Añadir en ui2.py (zona de utilidades/UI) ---
 def draw_simple_button(surface, rect, text, font, bg=(70,70,70), fg=(255,255,255)):
@@ -1227,7 +1263,7 @@ def _dev_cargar_mano_ganadora(jugador_local, visual_hand,
     return f"[DEV] Mano de {etiqueta_ronda} cargada ({len(nueva_mano)} cartas). ¡Ya puedes bajarte!"
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def main(manager_de_red): # <-- Acepta el manager de red
+def main(manager_de_red=None): # <-- Acepta el manager de red
     global mostrar_boton_comprar
     global screen, WIDTH, HEIGHT, fondo_img, organizar_habilitado, fase
     global network_manager, jugadores , players, cartas_eleccion
@@ -1261,6 +1297,8 @@ def main(manager_de_red): # <-- Acepta el manager de red
 
     # Asignar toda la informacion del manager de red de ui.py
     network_manager = manager_de_red 
+    if network_manager is None:
+        network_manager = DummyNetworkManager()
     
     # Obtener los datos compartidos
     # jugadores n -> conn, addr, name, id
@@ -2452,7 +2490,6 @@ def main(manager_de_red): # <-- Acepta el manager de red
                             print(f"Clic en FINAL de la jugada {idx+1} de {jugador} ({jugada['tipo']})")
                 nombre = get_clicked_box(event.pos, cuadros_interactivos)
 
-                # NUEVO CÓDIGO - INSERTAR AQUÍ
                 if nombre and nombre.startswith("Carta_"):
                     carta_click = cartas_ref.get(nombre)
                     tiempo_click = pygame.time.get_ticks()
@@ -2479,25 +2516,23 @@ def main(manager_de_red): # <-- Acepta el manager de red
                     else:
                         tiempo_ultimo_click = tiempo_click
                         carta_ultimo_click = carta_click
-                # NUEVO CÓDIGO - INSERTAR AQUÍ
-                else:
-                    rect_tomar_descarte = cuadros_interactivos.get("Tomar descarte")
-                    if rect_tomar_descarte and mazo_descarte and rect_tomar_descarte.collidepoint(event.pos):
-                        carta_click = mazo_descarte[-1]
-                        tiempo_click = pygame.time.get_ticks()
-                        es_doble_click = (
-                            carta_click is not None
-                            and carta_ultimo_click is carta_click
-                            and tiempo_click - tiempo_ultimo_click <= intervalo_doble_click
-                        )
 
-                        if es_doble_click:
-                            nombre = "Tomar descarte"
-                            tiempo_ultimo_click = 0
-                            carta_ultimo_click = None
-                        else:
-                            tiempo_ultimo_click = tiempo_click
-                            carta_ultimo_click = carta_click
+                elif nombre == "Tomar descarte":
+                    carta_click = mazo_descarte[-1] if mazo_descarte else None
+                    tiempo_click = pygame.time.get_ticks()
+                    es_doble_click = (
+                        carta_click is not None
+                        and carta_ultimo_click is carta_click
+                        and tiempo_click - tiempo_ultimo_click <= intervalo_doble_click
+                    )
+
+                    if es_doble_click:
+                        nombre = "Tomar descarte"
+                        tiempo_ultimo_click = 0
+                        carta_ultimo_click = None
+                    else:
+                        tiempo_ultimo_click = tiempo_click
+                        carta_ultimo_click = carta_click
                 if nombre and nombre.startswith("Carta_"):
                     idx = int(nombre.split("_")[1])
                     if idx in cartas_ocultas:
@@ -3871,6 +3906,20 @@ def main(manager_de_red): # <-- Acepta el manager de red
                 organizar_habilitado = True  # Vuelve a habilitar organización
         # Fin evento de pygame...
 
+        # --- Detección de carta bajo el cursor para lupa (hover) ---
+        try:
+            if magnify_enabled and 'cuadros_interactivos' in globals() and cuadros_interactivos:
+                mouse_pos = pygame.mouse.get_pos()
+                nombre_hover = get_clicked_box(mouse_pos, cuadros_interactivos)
+                # La lupa solo debe activarse para cartas bajadas, no para cartas de mano ni zonas de tablero.
+                if nombre_hover and nombre_hover.startswith("CartaBajada_"):
+                    magnify_card = cartas_ref.get(nombre_hover)
+                else:
+                    magnify_card = None
+        except Exception:
+            magnify_card = None
+
+
         if jugador_local.playerTurn and jugador_local.playerId == player_init_buy_id:
             print(f" Fuera del evento PYGAME...")
             bought = False
@@ -5161,6 +5210,8 @@ def main(manager_de_red): # <-- Acepta el manager de red
         # --- Ronda: calcula número según fase ---
         if fase == "ronda1":
             ronda_num = "Trio y Seguidilla"
+
+        
         elif fase == "ronda2":
             ronda_num = "2 Seguidillas"
         elif fase == "ronda3":
@@ -5169,6 +5220,39 @@ def main(manager_de_red): # <-- Acepta el manager de red
             ronda_num = "1 Seguidilla y 2 Trios"
         else:
             ronda_num = "-"
+
+        # --- DIBUJAR LUPA SI HAY CARTA SELECCIONADA POR HOVER ---
+        try:
+            if magnify_enabled and magnify_card is not None:
+                card_img = get_card_image(magnify_card)
+                mw, mh = magnify_size
+                try:
+                    img_big = pygame.transform.smoothscale(card_img, (mw, mh))
+                except Exception:
+                    img_big = card_img
+                mx, my = pygame.mouse.get_pos()
+                # Colocar la lupa un poco arriba del cursor y evitar que quede atravesada entre cartas.
+                offset_x = 18
+                offset_y = -mh - 18
+                pos_x = mx + offset_x
+                pos_y = my + offset_y
+                if pos_x + mw > WIDTH:
+                    pos_x = mx - mw - offset_x
+                if pos_x < 0:
+                    pos_x = 0
+                if pos_y < 0:
+                    pos_y = my + 18
+                    if pos_y + mh > HEIGHT:
+                        pos_y = HEIGHT - mh - 18
+                # fondo y borde para la lupa
+                rect_bg = pygame.Rect(pos_x - 4, pos_y - 4, mw + 8, mh + 8)
+                surf = pygame.Surface((rect_bg.width, rect_bg.height), pygame.SRCALPHA)
+                surf.fill((0, 0, 0, 180))
+                screen.blit(surf, (rect_bg.x, rect_bg.y))
+                pygame.draw.rect(screen, (220,220,220), rect_bg, 2, border_radius=6)
+                screen.blit(img_big, (pos_x, pos_y))
+        except Exception:
+            pass
 
         if ronda_rect:
             # Mostrar en dos líneas: etiqueta "Ronda:" arriba y número abajo
@@ -5476,7 +5560,10 @@ def main(manager_de_red): # <-- Acepta el manager de red
                             img = pygame.Surface((card_long, card_short))
                             img.fill((200,200,200))
                         
-                        # Dibujar siempre, el escalado previo asegura que cabe
+                        card_rect = pygame.Rect(x_centrado, pos_y, card_short, card_long)
+                        nombre_carta_bajada = f"CartaBajada_{jugador.playerName.replace(' ', '_')}_{info['play_index']}_{i}"
+                        cuadros_interactivos[nombre_carta_bajada] = card_rect
+                        cartas_ref[nombre_carta_bajada] = carta
                         screen.blit(img, (x_centrado, pos_y))
 
                     cursor_y += altura_jugada + GAP_ENTRE_JUGADAS
@@ -5588,7 +5675,11 @@ def main(manager_de_red): # <-- Acepta el manager de red
                             img = pygame.Surface((card_w, card_h))
                             img.fill((200,200,200))
                         
-                        # Ya no necesitamos clipping estricto porque el auto-escalado garantiza que cabe
+                        card_rect = pygame.Rect(pos_x, y_centrado, card_w, card_h)
+                        # Registrar la carta de bajada para hover/magnify
+                        nombre_carta_bajada = f"CartaBajada_{jugador.playerName.replace(' ', '_')}_{info['play_index']}_{i}"
+                        cuadros_interactivos[nombre_carta_bajada] = card_rect
+                        cartas_ref[nombre_carta_bajada] = carta
                         screen.blit(img, (pos_x, y_centrado))
                     
                     cursor_x += ancho_jugada + GAP_ENTRE_JUGADAS
@@ -6315,4 +6406,3 @@ tiempo_joker_fondo = 0
 if __name__ == "__main__":
     #ocultar_elementos_visual(screen, fondo_img)  # Solo muestra el fondo al inicio
     main()
-

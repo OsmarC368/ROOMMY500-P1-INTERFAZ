@@ -206,3 +206,4 @@ class GameClient:
         except Exception as e:
             logger.error(f"Error durante el envío: {e}")
             return False
+
