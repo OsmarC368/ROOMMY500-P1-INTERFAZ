@@ -290,6 +290,22 @@ class GameServer:
                         pass
             return
 
+        elif msg_type == MessageType.REQUEST_RESYNC.value:
+            # Un cliente se quedó esperando demasiado tiempo el cambio de
+            # ronda (PLAYER_ORDER perdido o llegado fuera de orden) y pide
+            # que se le reenvíe el último estado conocido.
+            logger.info(f"REQUEST_RESYNC recibido de {player.name}")
+            ultimo_estado = self.state.last_player_order
+            if ultimo_estado is not None:
+                try:
+                    self.transport.send_atomic(player.conn, ultimo_estado)
+                    logger.info(f"Resync (PLAYER_ORDER) reenviado a {player.name}")
+                except Exception as e:
+                    logger.warning(f"Error reenviando resync a {player.name}: {e}")
+            else:
+                logger.info(f"No hay PLAYER_ORDER guardado aún para reenviar a {player.name}")
+            return
+
         else:
             # ── Todas las jugadas del juego ──────────────────────────────────
             # 1. Anotar el sender para que el Host sepa de quién viene
@@ -314,3 +330,4 @@ class GameServer:
             if p.name == name:
                 return p
         return None
+

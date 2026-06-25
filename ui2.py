@@ -550,6 +550,7 @@ def get_card_image(card):
             img = pygame.Surface((60, 90), pygame.SRCALPHA)
             pygame.draw.rect(img, (200, 200, 200), img.get_rect(), border_radius=8)
             return img
+
 #CAMBIO 1
 # --- Añadir en ui2.py (zona de utilidades/UI) ---
 def draw_simple_button(surface, rect, text, font, bg=(70,70,70), fg=(255,255,255)):
@@ -1803,6 +1804,7 @@ def main(manager_de_red=None): # <-- Acepta el manager de red
                     "round_number": current_round_number
                 }
                 network_manager.broadcast_message(msgOrden)
+                network_manager.state.game_state["last_player_order"] = msgOrden
                 # Cambiar fase
                 
                 mensaje_orden = orden_str.strip()
@@ -2490,6 +2492,7 @@ def main(manager_de_red=None): # <-- Acepta el manager de red
                             print(f"Clic en FINAL de la jugada {idx+1} de {jugador} ({jugada['tipo']})")
                 nombre = get_clicked_box(event.pos, cuadros_interactivos)
 
+                # NUEVO CÓDIGO - INSERTAR AQUÍ
                 if nombre and nombre.startswith("Carta_"):
                     carta_click = cartas_ref.get(nombre)
                     tiempo_click = pygame.time.get_ticks()
@@ -5210,8 +5213,6 @@ def main(manager_de_red=None): # <-- Acepta el manager de red
         # --- Ronda: calcula número según fase ---
         if fase == "ronda1":
             ronda_num = "Trio y Seguidilla"
-
-        
         elif fase == "ronda2":
             ronda_num = "2 Seguidillas"
         elif fase == "ronda3":
@@ -6406,3 +6407,4 @@ tiempo_joker_fondo = 0
 if __name__ == "__main__":
     #ocultar_elementos_visual(screen, fondo_img)  # Solo muestra el fondo al inicio
     main()
+

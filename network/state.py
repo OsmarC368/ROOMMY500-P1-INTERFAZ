@@ -59,6 +59,12 @@ class NetworkState:
         self.last_activity = {}  # {player_id: timestamp_float}
         
         self.current_player_count = None
+
+        # Último mensaje PLAYER_ORDER enviado por el Host, usado para poder
+        # reenviar el estado de la ronda actual si un cliente solicita un
+        # REQUEST_RESYNC (por ejemplo, si se quedó "congelado" esperando
+        # el cambio de ronda porque el mensaje se perdió).
+        self.last_player_order = None
         
         logger.info("NetworkState inicializado de forma segura.")
     
@@ -127,4 +133,5 @@ class NetworkState:
         """Registra el último milisegundo en que un jugador respondió un ping."""
         with self._lock_players:
             self.last_activity[player_id] = timestamp
+
 

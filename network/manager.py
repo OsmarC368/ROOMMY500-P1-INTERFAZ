@@ -66,7 +66,12 @@ class NetworkManager:
         if not self.state.is_host:
             logger.warning("Solo el HOST puede hacer broadcast")
             return
-        
+
+        # Guardamos el último PLAYER_ORDER enviado, para poder reenviarlo si
+        # algún cliente se queda esperando indefinidamente (REQUEST_RESYNC).
+        if isinstance(message, dict) and message.get("type") == MessageType.PLAYER_ORDER.value:
+            self.state.last_player_order = message
+
         disconnected = []
         for player in self.state.get_connected_players():
             if player.is_host:
@@ -265,6 +270,29 @@ class NetworkManager:
             "playerName": playerName
         }
         self.sendData(msgSalir)
+
+    def request_resync(self):
+        """El CLIENTE usa este método para pedirle al Host que reenvíe el
+        último estado de ronda (PLAYER_ORDER) cuando se quedó esperando
+        demasiado tiempo sin recibirlo (ej. por un mensaje perdido).
+
+        Es un no-op seguro si quien lo llama es el propio Host (el Host
+        no necesita pedirse resync a sí mismo) o si no hay conexión activa.
+        """
+        if self.state.is_host:
+            logger.debug("request_resync ignorado: el Host no necesita resync.")
+            return False
+
+        if not self.state.player or not self.state.running:
+            logger.warning("request_resync: no hay conexión activa con el Host.")
+            return False
+
+        msg = {
+            "type": MessageType.REQUEST_RESYNC.value,
+            "playerId": self.state.player_id,
+            "playerName": self.state.playerName,
+        }
+        return self.sendData(msg)
 
     def get_game_info(self):
         """Obtiene información del juego."""
