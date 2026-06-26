@@ -109,6 +109,10 @@ jug_h_pct = 0.137
 # Diccionario para identificar cada caja
 boxes = {}
 
+# Diccionarios para las cartas interactivas
+cuadros_interactivos = {}
+cartas_ref = {}
+
 cartas_apartadas = set()
 cartas_ocultas = set()
 

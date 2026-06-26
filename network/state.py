@@ -134,4 +134,3 @@ class NetworkState:
         with self._lock_players:
             self.last_activity[player_id] = timestamp
 
-

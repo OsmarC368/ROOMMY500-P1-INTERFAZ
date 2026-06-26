@@ -237,6 +237,9 @@ class   UIManager:
         # Dimensiones de la pantalla
         self.SCREEN_WIDTH = screen_width
         self.SCREEN_HEIGHT = screen_height
+        self.ASSETS_PATH = os.path.join(os.path.dirname(__file__), "assets")
+        self.FONT_FILE = os.path.join(self.ASSETS_PATH, "PressStart2P-Regular.ttf")
+        self.cacheDeFuentes = {}
         
         # Manager de red (para conectar con el servidor, enviar/recibir datos)
         self.network_manager = network_manager
@@ -930,20 +933,46 @@ class   UIManager:
         self.SCREEN.blit(jugadores_surf, jug_rect)
 
 
-        # 3. SISTEMA DE NOTIFICACIÓN (EL DEFINITIVO Y BLINDADO)
-        with self.chatLock:
-            cantidad_actual = len(self.network_manager.messagesServer)
+         # ─── 3. SISTEMA DE NOTIFICACIÓN (RE-BLINDADO POST-CAMBIOS) ───
+        # Conseguimos de forma segura la cantidad actual de mensajes en el servidor
+        cantidad_actual = 0
+        if hasattr(self, "network_manager"):
+            # Intentamos leer messagesServer; si no existe por los cambios, usamos una lista vacía
+            msg_server = getattr(self.network_manager, "messagesServer", [])
+            if msg_server is not None:
+                cantidad_actual = len(msg_server)
 
+
+        # Inicialización de las variables de control de la UI (la primera vez)
         if not hasattr(self, "mensajes_guardados"):
             self.mensajes_guardados = cantidad_actual
             self.tiene_notificacion = False
 
+
+        # SI EL CHAT ESTÁ CERRADO: Si la cantidad actual creció, se activa la alerta
         if not getattr(self, "show_chat", False) and cantidad_actual > self.mensajes_guardados:
             self.tiene_notificacion = True
 
+
+        # SI EL CHAT ESTÁ ABIERTO: Reseteamos la alerta e igualamos el contador al día
         if getattr(self, "show_chat", False):
             self.tiene_notificacion = False
             self.mensajes_guardados = cantidad_actual
+
+        # ─── INTERCAMBIO SEGURO DE LA IMAGEN EN EL BOTÓN DEL CHAT ────────────
+        if hasattr(self, "TOGGLE_CHAT_BUTTON"):
+            # Si tu lógica dice que hay notificación, forzamos la textura con círculo rojo
+            if getattr(self, "tiene_notificacion", False):
+                if getattr(self, "chat_img_notif", None) is not None:
+                    self.TOGGLE_CHAT_BUTTON.original_image = self.chat_img_notif
+            else:
+                # Si no hay notificación, nos aseguramos de que regrese a la limpia
+                if getattr(self, "chat_img_normal", None) is not None:
+                    self.TOGGLE_CHAT_BUTTON.original_image = self.chat_img_normal
+           
+            # Procesamos el hover y dibujamos para que asimile la original_image correcta
+            self.TOGGLE_CHAT_BUTTON.check_hover(MENU_MOUSE_POS)
+            self.TOGGLE_CHAT_BUTTON.update(self.SCREEN)
 
         # Posicionamos el botón
         chat_x = self.SCREEN_WIDTH // 2
@@ -1111,25 +1140,72 @@ class   UIManager:
         if not mensaje or not tiempo:
             return
         try:
+            # 1. Control de tiempo de vida del aviso (5 segundos)
             if time.time() - tiempo < 5:
                 font_msg = self.get_game_font(18)
                 lines = self.lobbyMessage(mensaje)
                 line_h = font_msg.get_linesize()
+                
+                # CONFIGURACIÓN DE POSICIÓN (Más arriba)
                 base_x = self.SCREEN_WIDTH // 2
-                base_y = self.SCREEN_HEIGHT // 2 + 160
+                base_y = self.SCREEN_HEIGHT // 2 + 110  # Modificado: Antes era + 160. Ahora sube por encima del centro.
+                
                 total_h = line_h * len(lines)
                 start_y = base_y - total_h // 2
+                
+                # COLOR DEL BORDE DEL NOMBRE (Puedes cambiarlo aquí)
+                COLOR_BORDE_NOMBRE = (255, 215, 0)  # Amarillo/Dorado brillante
+                COLOR_BORDE_RESTO = (165, 42, 42)   # El marrón/rojo original
+                
                 for i, line in enumerate(lines):
-                    surf = font_msg.render(line, True, (255, 255, 255))
-                    rect = surf.get_rect(center=(base_x, start_y + i * line_h))
-                    # borde oscuro alrededor (sutil)
-                    for dx, dy in [(-1,0),(1,0),(0,-1),(0,1),(-1,-1),(1,-1),(-1,1),(1,1)]:
-                        self.SCREEN.blit(font_msg.render(line, True, (165, 42, 42)), (rect.x + dx, rect.y + dy))
-                    self.SCREEN.blit(surf, rect)
+                    current_y = start_y + i * line_h
+                    
+                    if i == 0:
+                        # Es la primera línea: separamos el nombre (primera palabra) del resto
+                        parts = line.split(" ", 1)
+                        name = parts[0]
+                        rest = " " + parts[1] if len(parts) > 1 else ""
+                        
+                        # --- RENDERIZAR NOMBRE (Cursiva + Borde Personalizado) ---
+                        font_msg.set_italic(True)  # Activamos cursiva temporalmente
+                        surf_name = font_msg.render(name, True, (255, 255, 255))
+                        borde_name = font_msg.render(name, True, COLOR_BORDE_NOMBRE)
+                        font_msg.set_italic(False) # Desactivamos cursiva para el resto del texto
+                        
+                        # --- RENDERIZAR RESTO DEL TEXTO (Normal + Borde Original) ---
+                        surf_rest = font_msg.render(rest, True, (255, 255, 255))
+                        borde_rest = font_msg.render(rest, True, COLOR_BORDE_RESTO)
+                        
+                        # Calcular el ancho total combinado para centrar la línea entera
+                        total_w = surf_name.get_width() + surf_rest.get_width()
+                        line_start_x = base_x - total_w // 2
+                        
+                        # Dibujar contorno del Nombre
+                        for dx, dy in [(-1,0),(1,0),(0,-1),(0,1),(-1,-1),(1,-1),(-1,1),(1,1)]:
+                            self.SCREEN.blit(borde_name, (line_start_x + dx, current_y + dy))
+                        # Dibujar texto del Nombre
+                        self.SCREEN.blit(surf_name, (line_start_x, current_y))
+                        
+                        # Dibujar contorno del Resto (posicionado justo después del nombre)
+                        rest_x = line_start_x + surf_name.get_width()
+                        for dx, dy in [(-1,0),(1,0),(0,-1),(0,1),(-1,-1),(1,-1),(-1,1),(1,1)]:
+                            self.SCREEN.blit(borde_rest, (rest_x + dx, current_y + dy))
+                        # Dibujar texto del Resto
+                        self.SCREEN.blit(surf_rest, (rest_x, current_y))
+                        
+                    else:
+                        # Líneas secundarias (si el mensaje es muy largo y hace wrap) se dibujan normal
+                        surf = font_msg.render(line, True, (255, 255, 255))
+                        rect = surf.get_rect(center=(base_x, current_y))
+                        borde_normal = font_msg.render(line, True, COLOR_BORDE_RESTO)
+                        
+                        for dx, dy in [(-1,0),(1,0),(0,-1),(0,1),(-1,-1),(1,-1),(-1,1),(1,1)]:
+                            self.SCREEN.blit(borde_normal, (rect.x + dx, rect.y + dy))
+                        self.SCREEN.blit(surf, rect)
+                        
         except Exception:
-            # No bloquear la UI si hay un error en el render
+            # Prevenir que un fallo gráfico detenga el bucle principal del juego
             return
-    #############################LOS CAMBIOS DEL MENSAJE DEL LOBBY TERMINAN AQUÍ#############################################
 
     def options(self):
         pygame.display.set_caption("Opciones")
@@ -1749,4 +1825,3 @@ o Descartar: Colocar una carta boca arriba en el centro de la mesa para finaliza
 
             pygame.display.flip()
             clock.tick(60)
-        
